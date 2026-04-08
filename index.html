@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Edu Bridge | AI-Mediated Learning</title>
+    <!-- Tailwind CSS CDN 로드 (로컬 설정 문제 해결) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      // 커스텀 애니메이션 설정 (Shared State 상호작용 시각화용)
+      tailwind.config = {
+        theme: {
+          extend: {
+            animation: {
+              'ping-slow': 'ping 3s cubic-bezier(0, 0, 0.2, 1) infinite',
+            }
+          }
+        }
+      }
+    </script>
+    <style>
+      /* 부드러운 스크롤과 기본 폰트 설정 */
+      * { font-family: 'Pretendard', system-ui, -apple-system, sans-serif; }
+      body { margin: 0; padding: 0; background-color: #f8fafc; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
