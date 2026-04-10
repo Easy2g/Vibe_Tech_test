@@ -96,8 +96,21 @@ function StudentEntryModal({ validCode, onClose, onEntry }) {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (inputCode === (validCode || '123456')) onEntry();
-    else alert('강의 코드가 일치하지 않습니다.');
+    
+    // [가상 서버] localStorage에서 현재 활성화된 강의 정보 확인
+    const savedLecture = localStorage.getItem('vibe_lecture_info');
+    let currentValidCode = validCode || '123456';
+    
+    if (savedLecture) {
+      const data = JSON.parse(savedLecture);
+      currentValidCode = data.code;
+    }
+
+    if (inputCode === currentValidCode) {
+      onEntry();
+    } else {
+      alert('강의 코드가 일치하지 않거나 현재 열려있는 강의가 없습니다.');
+    }
   };
 
   return (
@@ -140,7 +153,7 @@ function StudentEntryModal({ validCode, onClose, onEntry }) {
 /**
  * 단어 설명 모달: 레벨 선택을 삭제하고, AI 분석 기반의 세부적인 전문 설명을 노출합니다.
  */
-export function WordExplanationModal({ word, onClose }) {
+export function WordExplanationModal({ word, onClose, lectureContext }) {
   const explanations = {
     '인공지능': '인간의 지능적 행위를 컴퓨터 프로그램으로 모방하는 광범위한 기술 체계입니다. 추론, 학습, 인식을 포함하며 현대 지능형 시스템의 근간이 됩니다.',
     '머신러닝': '명시적인 프로그래밍 없이 데이터의 통계적 구조를 학습하여 성능을 최적화하는 알고리즘 연구 분야입니다. 손실 함수 최소화를 목표로 가중치를 갱신합니다.',
@@ -148,6 +161,11 @@ export function WordExplanationModal({ word, onClose }) {
     '알고리즘': '주어진 입력으로부터 원하는 출력을 도출하기 위해 정의된 유한한 절차의 집합입니다. 시간 복잡도와 공간 복잡도 분석을 통한 효율성 검증이 필수적입니다.',
     '딥러닝': '인간 뇌의 생물학적 신경망 구조를 모방한 다층 퍼셉트론(MLP) 기반의 심화 학습 기술입니다. 역전파 알고리즘을 통해 수백만 개의 파라미터를 최적화합니다.'
   };
+
+  // 강의 맥락(오늘의 주제)에 따른 부가 설명 생성
+  const contextInjectedText = lectureContext?.summary?.topic 
+    ? `[${lectureContext.summary.topic}] 강의 맥락 내 분석: ${explanations[word] || '준비 중입니다.'}`
+    : explanations[word] || '분석된 강의 자료를 바탕으로 상세 설명을 준비 중입니다.';
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/20 backdrop-blur-sm">
@@ -164,7 +182,7 @@ export function WordExplanationModal({ word, onClose }) {
         
         <div className="p-8">
           <p className="text-slate-700 font-semibold leading-relaxed text-sm">
-            {explanations[word] || '분석된 강의 자료를 바탕으로 상세 설명을 준비 중입니다.'}
+            {contextInjectedText}
           </p>
         </div>
         

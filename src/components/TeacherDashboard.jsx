@@ -4,14 +4,13 @@ import { motion, AnimatePresence } from 'framer-motion';
 /**
  * 교수 대시보드: 실시간 음성 분석 및 고도화된 AI 중재 가이드 제공
  */
-export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, onStart, misunderstandingCount, onLiveTextUpdate }) {
+export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, onStart, misunderstandingCount, onLiveTextUpdate, studentCount }) {
   const [isUploading, setIsUploading] = useState(false);
   const [analysisProgress, setAnalysisProgress] = useState(0);
   const [isAnalyzed, setIsAnalyzed] = useState(false);
   const [uploadFileName, setUploadFileName] = useState('');
 
-  const totalStudents = 20; 
-  const misunderstandingRatio = Math.round((misunderstandingCount / totalStudents) * 100);
+  const misunderstandingRatio = Math.round((misunderstandingCount / studentCount) * 100);
 
   // [Step 5] Web Speech API를 활용한 실시간 음성 인식 및 데이터 전달
   useEffect(() => {
@@ -102,7 +101,18 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
             <motion.div key="complete" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1 }} className="max-w-md space-y-8">
               <div className="w-20 h-20 bg-emerald-50 rounded-full flex items-center justify-center mx-auto text-3xl">✅</div>
               <h2 className="text-2xl font-bold text-slate-800">분석 완료</h2>
-              <button onClick={() => onStart({ title: 'AI 실시간 분석 강의' })} className="w-full py-4 bg-slate-900 text-white font-bold rounded-2xl shadow-xl">음성 인식 및 강의 시작</button>
+              <button 
+                onClick={() => onStart({ 
+                  title: 'AI 실시간 분석 강의',
+                  summary: {
+                    topic: '인공지능의 기본 원리와 현대적 응용',
+                    keywords: ['신경망 구조', '매개변수 최적화', '데이터 전처리', '모델 평가 지표']
+                  }
+                })} 
+                className="w-full py-4 bg-slate-900 text-white font-bold rounded-2xl shadow-xl hover:bg-slate-800 transition-all"
+              >
+                음성 인식 및 강의 시작
+              </button>
             </motion.div>
           )}
         </AnimatePresence>
@@ -117,7 +127,7 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
       <div className="h-16 flex-shrink-0 flex items-center justify-between px-6 bg-white rounded-2xl border border-slate-100">
         <div className="flex gap-8">
           <div className="flex flex-col"><span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Listening Status</span><span className="text-xs font-black text-emerald-500 flex items-center gap-1.5"><span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping"></span> AI 분석 중...</span></div>
-          <div className="flex flex-col"><span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Live Audience</span><span className="text-xs font-black text-slate-700">{totalStudents}명 연결됨</span></div>
+          <div className="flex flex-col"><span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Live Audience</span><span className="text-xs font-black text-slate-700">{studentCount}명 연결됨</span></div>
         </div>
         <div className="bg-indigo-50 px-4 py-2 rounded-xl text-indigo-600 text-xs font-black">Speed {lectureTempo}%</div>
       </div>
@@ -150,7 +160,7 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
             </div>
             <div className="w-full bg-rose-50 rounded-2xl p-5 border border-rose-100 text-center">
               <p className="text-[10px] font-bold text-rose-400 uppercase">Lost Students</p>
-              <p className="text-2xl font-black text-rose-700">{misunderstandingCount} / {totalStudents}</p>
+              <p className="text-2xl font-black text-rose-700">{misunderstandingCount} / {studentCount}</p>
             </div>
           </div>
         </section>

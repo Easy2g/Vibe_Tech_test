@@ -1,11 +1,21 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { RoleSelection } from './components/SharedUI';
 import StudentView from './components/StudentView';
 import TeacherDashboard from './components/TeacherDashboard';
 import { AnimatePresence, motion } from 'framer-motion';
 
 /**
+ * 가상 서버 데이터 키 정의
+ */
+const STORAGE_KEYS = {
+  LECTURE: 'vibe_lecture_info',    // 강의 코드 및 맥락
+  FEEDBACK: 'vibe_feedback_data',  // 클릭 및 미이해 데이터
+  STUDENTS: 'vibe_student_list',   // 접속 중인 학생 리스트
+};
+
+/**
  * 중앙 상태 관리자: 앱의 모든 실시간 데이터(STT, 클릭, 미이해 등)를 통합 관리합니다.
+ * localStorage 기반의 '가상 서버' 로직을 통해 브라우저 탭 간 실시간 동기화를 지원합니다.
  */
 export default function App() {
   const [role, setRole] = useState(null); 
@@ -13,11 +23,14 @@ export default function App() {
   const [lectureCode, setLectureCode] = useState('');
   const [teacherName, setTeacherName] = useState('');
   
+  // [신규] 실시간 접속 학생 수 상태
+  const [studentCount, setStudentCount] = useState(0);
+
   // 강의 세션 상태
   const [isLectureStarted, setIsLectureStarted] = useState(false);
   const [lectureContext, setLectureContext] = useState(null);
 
-  // [Step 5 신규] 실시간 음성 인식 자막 데이터
+  // 실시간 음성 인식 자막 데이터
   const [liveText, setLiveText] = useState('');
 
   // 학생 피드백 데이터
@@ -29,45 +42,136 @@ export default function App() {
   const [lectureTempo, setLectureTempo] = useState(50);
   const [lastActivity, setLastActivity] = useState(Date.now());
 
+  // [가상 서버] 타 탭에서 변경된 데이터 실시간 수신 및 동기화
+  useEffect(() => {
+    const handleStorageSync = (e) => {
+      if (!e.newValue) {
+        // 데이터가 삭제된 경우 (강의 종료 등)
+        if (e.key === STORAGE_KEYS.LECTURE) {
+          setIsLectureStarted(false);
+          setLectureContext(null);
+        }
+        if (e.key === STORAGE_KEYS.STUDENTS) setStudentCount(0);
+        return;
+      }
+
+      const data = JSON.parse(e.newValue);
+
+      switch (e.key) {
+        case STORAGE_KEYS.LECTURE:
+          setLectureCode(data.code);
+          setLectureContext(data.context);
+          setIsLectureStarted(data.isStarted);
+          break;
+        case STORAGE_KEYS.FEEDBACK:
+          setMisunderstandingCount(data.misunderstandingCount);
+          setWordClicks(data.wordClicks);
+          setLectureTempo(data.lectureTempo);
+          break;
+        case STORAGE_KEYS.STUDENTS:
+          setStudentCount(data.length);
+          break;
+      }
+    };
+
+    window.addEventListener('storage', handleStorageSync);
+    
+    // 초기 로드 시 기존 세션 동기화 (학생 탭이 새로고침되었을 때 등)
+    const savedLecture = localStorage.getItem(STORAGE_KEYS.LECTURE);
+    if (savedLecture) {
+      const data = JSON.parse(savedLecture);
+      setLectureCode(data.code);
+      setLectureContext(data.context);
+      setIsLectureStarted(data.isStarted);
+    }
+
+    const savedStudents = localStorage.getItem(STORAGE_KEYS.STUDENTS);
+    if (savedStudents) setStudentCount(JSON.parse(savedStudents).length);
+
+    return () => window.removeEventListener('storage', handleStorageSync);
+  }, []);
+
   // 역할 선택 및 접속
   const handleRoleSelect = (selectedRole, data) => {
     setRole(selectedRole);
     if (data) {
       if (data.code) setLectureCode(data.code);
       if (data.name) setTeacherName(data.name);
+      
+      // 학생 입장 시 가상 서버에 학생 정보 등록 및 카운트 업데이트
+      if (selectedRole === 'student') {
+        const currentStudents = JSON.parse(localStorage.getItem(STORAGE_KEYS.STUDENTS) || '[]');
+        const studentId = `std_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+        const newStudentList = [...currentStudents, studentId];
+        localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify(newStudentList));
+        setStudentCount(newStudentList.length);
+      }
+      
       setIsConnected(true);
     }
   };
 
-  // 강의 시작
+  // 강의 시작 (교수 전용: localStorage에 강의 정보 브로드캐스트)
   const handleStartLecture = (context) => {
+    const lectureData = { code: lectureCode, context, isStarted: true };
+    localStorage.setItem(STORAGE_KEYS.LECTURE, JSON.stringify(lectureData));
     setLectureContext(context);
     setIsLectureStarted(true);
   };
 
-  // [Step 5 신규] 실시간 자막 업데이트 핸들러
+  // 피드백 데이터 통합 브로드캐스트 함수
+  const broadcastFeedback = (updates) => {
+    const currentFeedback = {
+      misunderstandingCount,
+      wordClicks,
+      lectureTempo,
+      ...updates
+    };
+    localStorage.setItem(STORAGE_KEYS.FEEDBACK, JSON.stringify(currentFeedback));
+  };
+
+  // 실시간 자막 업데이트 핸들러
   const handleLiveTextUpdate = useCallback((text) => {
     setLiveText(prev => (prev.length > 500 ? text : prev + ' ' + text));
   }, []);
 
-  // 단어 클릭
+  // 단어 클릭 처리 (피드백 브로드캐스트 포함)
   const handleWordClick = (word) => {
-    setWordClicks(prev => ({ ...prev, [word]: prev[word] + 1 }));
-    setLastActivity(Date.now()); 
+    const newClicks = { ...wordClicks, [word]: wordClicks[word] + 1 };
+    setWordClicks(newClicks);
+    setLastActivity(Date.now());
+    broadcastFeedback({ wordClicks: newClicks });
   };
 
-  // 맥락 미이해
+  // 맥락 미이해 처리 (피드백 브로드캐스트 포함)
   const handleMisunderstanding = () => {
-    setMisunderstandingCount(prev => prev + 1);
+    const newCount = misunderstandingCount + 1;
+    setMisunderstandingCount(newCount);
+    broadcastFeedback({ misunderstandingCount: newCount });
   };
 
-  // 강의 속도
+  // 강의 속도 조절 처리 (피드백 브로드캐스트 포함)
   const handleTempoChange = (value) => {
     setLectureTempo(value);
+    broadcastFeedback({ lectureTempo: value });
   };
 
-  // 나가기 (초기화)
+  // 나가기 (데이터 초기화 및 가상 서버 세션 종료)
   const handleExit = () => {
+    if (role === 'teacher') {
+      // 교수가 나가면 가상 서버의 모든 강의 데이터 파기 (전체 세션 종료)
+      localStorage.removeItem(STORAGE_KEYS.LECTURE);
+      localStorage.removeItem(STORAGE_KEYS.FEEDBACK);
+      localStorage.removeItem(STORAGE_KEYS.STUDENTS);
+    } else if (role === 'student') {
+      // 학생이 나가면 가상 서버 학생 리스트에서 한 명 제거
+      const currentStudents = JSON.parse(localStorage.getItem(STORAGE_KEYS.STUDENTS) || '[]');
+      if (currentStudents.length > 0) {
+        currentStudents.pop(); 
+        localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify(currentStudents));
+      }
+    }
+    
     setRole(null);
     setIsConnected(false);
     setIsLectureStarted(false);
@@ -112,7 +216,7 @@ export default function App() {
               <StudentView 
                 onWordClick={handleWordClick} lastActivity={lastActivity} onTempoChange={handleTempoChange} 
                 lectureTempo={lectureTempo} onMisunderstand={handleMisunderstanding}
-                liveText={liveText}
+                liveText={liveText} lectureContext={lectureContext}
               />
             )}
             
@@ -120,7 +224,7 @@ export default function App() {
               <TeacherDashboard 
                 wordClicks={wordClicks} lectureTempo={lectureTempo} isStarted={isLectureStarted}
                 onStart={handleStartLecture} misunderstandingCount={misunderstandingCount}
-                onLiveTextUpdate={handleLiveTextUpdate}
+                onLiveTextUpdate={handleLiveTextUpdate} studentCount={studentCount}
               />
             )}
 
@@ -131,7 +235,7 @@ export default function App() {
                   <StudentView 
                     onWordClick={handleWordClick} lastActivity={lastActivity} onTempoChange={handleTempoChange} 
                     lectureTempo={lectureTempo} onMisunderstand={handleMisunderstanding}
-                    liveText={liveText}
+                    liveText={liveText} lectureContext={lectureContext}
                   />
                 </div>
                 <div className="flex-1 lg:pl-2 min-h-0 overflow-hidden">
@@ -139,7 +243,7 @@ export default function App() {
                   <TeacherDashboard 
                     wordClicks={wordClicks} lectureTempo={lectureTempo} isStarted={isLectureStarted}
                     onStart={handleStartLecture} misunderstandingCount={misunderstandingCount}
-                    onLiveTextUpdate={handleLiveTextUpdate}
+                    onLiveTextUpdate={handleLiveTextUpdate} studentCount={studentCount}
                   />
                 </div>
               </div>
