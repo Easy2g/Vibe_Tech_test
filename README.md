@@ -17,13 +17,19 @@
 
 ### 👨‍🎓 학생용 (Student Interface)
 - **실시간 지능형 스크립트 (Live Contextual Script)**: 강의 흐름에 따라 노출되는 텍스트 중 모르는 용어를 즉시 클릭 가능.
-- **3단계 적응형 해설 (3-Level Adaptive Explanation)**: 사용자의 이해 수준에 맞춰 [입문(Intro) / 심화(Deep) / 마스터(Master)] 단계별 맞춤형 용어 사전 제공.
-- **익명 피드백 시스템 (Anonymous Feedback)**: 질문에 대한 부담 없이 클릭 한 번으로 교수자에게 이해도 부족 신호 전송.
+- **3단계 적응형 해설 (3-Level Adaptive Explanation)**: 사용자의 이해 수준에 맞춰 [기초 / 심화 / 전문] 단계별 맞춤형 용어 사전 제공.
+- **강의 속도 피드백 (Tempo Feedback)**: [너무 느려요 / 딱 좋아요 / 조금 빨라요] 3가지 버튼을 통한 직관적인 강의 속도 조절 요청.
+- **익명성 보장**: 질문에 대한 부담 없이 데이터만으로 교수자와 소통.
 
 ### 👨‍🏫 교수용 (Teacher Dashboard)
-- **실시간 키워드 히트맵 (Real-time Keyword Heatmap)**: 어떤 용어에서 학생들이 정체되고 있는지 막대 그래프로 시각화.
-- **강의 페이스 가이드 (Lecture Pacing Guide)**: 누적 클릭 데이터를 기반으로 강의 속도 조절(Slow down/Speed up) 권장 알림 제공.
-- **단원 종합 이해도 체크 (Chapter Mastery Analytics)**: 강의 종료 시점의 데이터 안정화를 분석하여 전체적인 단원 이해도(Achievement Rate) 산출.
+- **싱글 뷰 대시보드 (Fixed Single View)**: 모든 정보를 스크롤 없이 한눈에 파악할 수 있는 최적화된 레이아웃.
+- **실시간 키워드 히트맵 (Real-time Keyword Heatmap)**: 어떤 용어에서 학생들이 정체되고 있는지 실시간 시각화.
+- **AI 중재 가이드 (AI Mediation Insights)**: 누적 클릭 데이터를 분석하여 "보충 설명 필요", "속도 조절" 등의 구체적인 대응 전략 제안.
+- **강의 코드 시스템 (Session Management)**: 랜덤 생성된 6자리 코드로 학생들과 안전하게 연결.
+
+### 🔐 접속 및 보안 (Security & Connection)
+- **교수 인증 시스템**: 비밀번호 기반의 교수 전용 대시보드 접근 제어 및 이름 기반 세션 관리.
+- **실시간 강의 코드 (Session Code)**: 생성된 코드를 입력한 학생만 해당 강의에 참여할 수 있는 논리적 보안 레이어.
 
 ---
 
@@ -32,22 +38,13 @@
 본 프로젝트는 높은 생산성과 세련된 사용자 경험을 위해 최신 프론트엔드 에코시스템을 활용합니다.
 
 - **Framework**: [Vite](https://vitejs.dev/) + [React 19](https://react.dev/)
-- **Styling**: [Tailwind CSS v4](https://tailwindcss.com/) (CSS-first engine)
-- **State Management**: React Shared State (Simulation model)
+- **Styling**: [Tailwind CSS v4](https://tailwindcss.com/)
+- **Animation**: [Framer Motion](https://www.framer.com/motion/) (Smooth Fade-in & Transitions)
 - **Design System**: Apple Style Minimal UI (White, Indigo, Slate)
 
 ---
 
-## 4. Day 1 개발 로그 (Development Log)
-
-- **인프라 구축**: Vite 환경 설정 및 Tailwind CSS v4 최신 규격(`@tailwindcss/postcss`) 기반의 빌드 파이프라인 최적화.
-- **코어 아키텍처 설계**: 단일 파일(`App.jsx`) 내에서 학생-교수 간 데이터 흐름을 시뮬레이션하는 Shared State 구조 설계 완료.
-- **UI 프로토타이핑**: Apple 디자인 가이드를 준수하는 미니멀한 인터페이스 및 사용자 인터랙션을 강조하는 Tailwind 애니메이션(Ping, Transition) 구현.
-- **로그 데이터 연동**: 키워드 클릭 시 실시간으로 대시보드 통계가 갱신되는 반응형 UI 검증 완료.
-
----
-
-## 5. 실행 방법 (Getting Started)
+## 4. 실행 방법 (Getting Started)
 
 프로젝트를 로컬 환경에서 실행하려면 아래 과정을 따르세요. (Node.js 20+ 권장)
 
@@ -59,7 +56,9 @@ npm install
 npm run dev
 ```
 
-서버 실행 후 브라우저에서 `http://localhost:5173` (또는 표시된 포트)에 접속하여 **'시뮬레이터 모드'**를 선택하면 학생과 교수의 실시간 상호작용을 한눈에 확인할 수 있습니다.
+서버 실행 후 브라우저에서 `http://localhost:5173`에 접속하여 역할을 선택하세요. 
+- **교수**: 이름 입력 및 비밀번호(`1234`) 입력 후 생성된 코드를 확인합니다.
+- **학생**: 교수가 생성한 6자리 코드를 입력하여 입장합니다.
 
 ---
 
