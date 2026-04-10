@@ -6,19 +6,18 @@ export async function onRequestPost(context) {
   
   try {
     const { textContent } = await request.json();
-    const API_KEY = env.GEMINI_API_KEY; // Cloudflare 관리자 화면에서 설정할 변수
+    const API_KEY = env.GEMINI_API_KEY;
 
     if (!API_KEY) {
-      return new Response(JSON.stringify({ error: "API 키가 설정되지 않았습니다." }), { status: 500 });
+      return new Response(JSON.stringify({ 
+        error: "Cloudflare 설정에 GEMINI_API_KEY가 없습니다. 대시보드의 환경 변수 설정을 확인하세요." 
+      }), { status: 500, headers: { "Content-Type": "application/json" } });
     }
 
     const prompt = `
-      당신은 교육 전문가입니다. 다음 강의 자료 내용을 분석하여 학생용 요약본을 JSON 형식으로 작성하세요.
-      반드시 다음 JSON 형식을 엄격히 지켜주세요:
-      { "topic": "주제", "keyPoints": ["핵심1", "핵심2", "핵심3", "핵심4"] }
-      
-      내용:
-      ${textContent.substring(0, 10000)}
+      강의 전문가로서 다음 텍스트를 요약하세요. 
+      반드시 JSON 형식으로 응답하세요: { "topic": "주제", "keyPoints": ["핵심1", "핵심2", "핵심3", "핵심4"] }
+      내용: ${textContent.substring(0, 7000)}
     `;
 
     const apiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`, {
@@ -29,17 +28,18 @@ export async function onRequestPost(context) {
       })
     });
 
+    if (!apiResponse.ok) {
+      const errorData = await apiResponse.json();
+      return new Response(JSON.stringify({ error: "Gemini API 호출 실패", detail: errorData }), { status: apiResponse.status });
+    }
+
     const data = await apiResponse.json();
     const aiResult = data.candidates[0].content.parts[0].text;
-    
-    // JSON 응답 정제
     const cleanJson = aiResult.replace(/```json|```/g, "").trim();
     
-    return new Response(cleanJson, {
-      headers: { "Content-Type": "application/json" }
-    });
+    return new Response(cleanJson, { headers: { "Content-Type": "application/json" } });
 
   } catch (error) {
-    return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+    return new Response(JSON.stringify({ error: "서버 내부 오류", message: error.message }), { status: 500 });
   }
 }
