@@ -2,7 +2,8 @@ import React, { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 /**
- * 교수 대시보드: 강의 자료 업로드 및 실시간 데이터 시각화
+ * 교수 대시보드: [단어 히트맵] : [맥락 미이해] : [AI 가이드] = 3:3:4 레이아웃
+ * 브라우저 스크롤 없이 한 화면(Single-view)에 모든 정보를 배치합니다.
  */
 export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, onStart, misunderstandingCount }) {
   const [isUploading, setIsUploading] = useState(false);
@@ -10,6 +11,11 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
   const [isAnalyzed, setIsAnalyzed] = useState(false);
   const [uploadFileName, setUploadFileName] = useState('');
 
+  // 시뮬레이션을 위한 가상의 전체 학생 수 및 미이해 비율 계산
+  const totalStudents = 20; 
+  const misunderstandingRatio = Math.round((misunderstandingCount / totalStudents) * 100);
+
+  // 강의 자료 업로드 시뮬레이션 핸들러
   const startAnalysis = (fileName) => {
     setUploadFileName(fileName);
     setIsUploading(true);
@@ -27,55 +33,74 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
     }, 150);
   };
 
+  // 실시간 데이터를 종합 분석하여 AI 중재 가이드 메시지 생성
   const aiInsights = useMemo(() => {
     const list = [];
     
-    // [Step 3 신규] 맥락 미이해 수치가 높을 때의 알림
+    // 1. 맥락 이해도 기반 가이드 (심각도: Danger)
     if (misunderstandingCount >= 5) {
-      list.push({ type: 'danger', title: '맥락 이해도 위기', desc: `${misunderstandingCount}명의 학생이 전체 흐름을 놓치고 있습니다. 현재 단원을 잠시 멈추고 요약 설명이 필요합니다.` });
+      list.push({ 
+        type: 'danger', 
+        title: '긴급: 강의 맥락 재설정 필요', 
+        desc: `현재 참여 학생의 ${misunderstandingRatio}%가 핵심 흐름을 놓치고 있습니다. 전문 용어 나열보다는 실제 서비스 활용 사례를 들어 2분간 브리핑해 주세요.` 
+      });
     }
 
-    Object.entries(wordClicks).forEach(([word, count]) => {
-      if (count >= 10) list.push({ type: 'warning', title: `용어 미숙지: ${word}`, desc: '학생들이 용어 자체를 어려워합니다. 사전에 정의된 상세 내용을 읽어주세요.' });
-    });
+    // 2. 키워드 클릭 빈도 기반 가이드 (심각도: Warning)
+    const mostClickedWord = Object.entries(wordClicks).sort((a, b) => b[1] - a[1])[0];
+    if (mostClickedWord && mostClickedWord[1] >= 8) {
+      list.push({ 
+        type: 'warning', 
+        title: `키워드 집중 해설 권장: ${mostClickedWord[0]}`, 
+        desc: `'${mostClickedWord[0]}' 단어에 대한 클릭이 집중되고 있습니다. 해당 개념이 뒤에 나올 실습의 핵심이므로, 다시 한번 정의를 짚고 넘어가시는 것을 추천합니다.` 
+      });
+    }
     
-    if (lectureTempo >= 75) list.push({ type: 'danger', title: '템포 가속화', desc: '속도가 매우 빠릅니다. 학생들의 리듬에 맞춰주세요.' });
-    else if (lectureTempo <= 25) list.push({ type: 'info', title: '템포 정체', desc: '조금 더 속도감 있게 진행하셔도 좋습니다.' });
+    // 3. 강의 템포 기반 가이드 (심각도: Info/Danger)
+    if (lectureTempo >= 75) {
+      list.push({ 
+        type: 'danger', 
+        title: '강의 템포 과속 알림', 
+        desc: '학생들의 반응 속도가 교수님의 설명을 따라가지 못하고 있습니다. 10% 정도 느린 호흡으로 진행해 주세요.' 
+      });
+    }
     
     return list;
-  }, [wordClicks, lectureTempo, misunderstandingCount]);
+  }, [wordClicks, lectureTempo, misunderstandingCount, misunderstandingRatio]);
 
   const sortedWords = Object.entries(wordClicks).sort((a, b) => b[1] - a[1]);
   const maxClicks = Math.max(...Object.values(wordClicks), 1);
 
+  // [상태 1] 강의 시작 전: 업로드 및 분석 화면
   if (!isStarted) {
     return (
       <div className="h-full flex flex-col items-center justify-center bg-white rounded-3xl border-2 border-dashed border-slate-200 p-12 text-center overflow-hidden">
         <AnimatePresence mode="wait">
           {!isUploading && !isAnalyzed ? (
-            <motion.div key="upload" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="max-w-md space-y-6">
+            <motion.div key="upload" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="max-w-md space-y-6">
               <div className="w-20 h-20 bg-indigo-50 rounded-full flex items-center justify-center mx-auto text-3xl">📄</div>
               <div className="space-y-2">
                 <h2 className="text-2xl font-bold text-slate-800">강의 자료 업로드</h2>
-                <p className="text-slate-500 text-sm leading-relaxed">PDF 파일을 업로드하면 AI가 핵심 맥락을 추출합니다.</p>
+                <p className="text-slate-500 text-sm">PDF 자료를 업로드하면 AI가 핵심 맥락을 추출합니다.</p>
               </div>
-              <label className="block w-full py-4 bg-indigo-600 text-white font-bold rounded-2xl cursor-pointer hover:bg-indigo-700 transition-all">
+              <label className="block w-full py-4 bg-indigo-600 text-white font-bold rounded-2xl cursor-pointer hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100">
                 파일 선택하기
                 <input type="file" className="hidden" onChange={(e) => startAnalysis(e.target.files[0]?.name || '강의자료.pdf')} />
               </label>
             </motion.div>
           ) : isUploading ? (
-            <motion.div key="analyzing" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="max-w-md w-full space-y-8">
-              <h2 className="text-xl font-bold text-slate-800">AI 정밀 분석 중...</h2>
+            <motion.div key="analyzing" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="max-w-md w-full space-y-8">
+              <h2 className="text-xl font-bold text-slate-800 text-center">AI 맥락 정밀 분석 중...</h2>
               <div className="w-full bg-slate-100 h-3 rounded-full overflow-hidden">
                 <motion.div initial={{ width: 0 }} animate={{ width: `${analysisProgress}%` }} className="h-full bg-indigo-500" />
               </div>
+              <p className="text-xs text-slate-400 font-bold uppercase animate-pulse">Extracting Knowledge Graph</p>
             </motion.div>
           ) : (
             <motion.div key="complete" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="max-w-md space-y-8">
               <div className="w-20 h-20 bg-emerald-50 rounded-full flex items-center justify-center mx-auto text-3xl">✅</div>
               <h2 className="text-2xl font-bold text-slate-800">맥락 분석 완료</h2>
-              <button onClick={() => onStart({ title: '인공지능 기초' })} className="w-full py-4 bg-slate-900 text-white font-bold rounded-2xl">강의 시작하기</button>
+              <button onClick={() => onStart({ title: '분석된 강의' })} className="w-full py-4 bg-slate-900 text-white font-bold rounded-2xl hover:bg-slate-800 transition-all">강의 시작하기</button>
             </motion.div>
           )}
         </AnimatePresence>
@@ -83,67 +108,147 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
     );
   }
 
+  // [상태 2] 강의 시작 후: 3대 패널 싱글 뷰 대시보드
   return (
     <div className="h-full flex flex-col gap-4 overflow-hidden">
-      {/* 상단 요약 바 */}
-      <div className="grid grid-cols-4 gap-4 h-20 flex-shrink-0">
-        <div className="bg-white rounded-2xl border border-slate-100 p-4 flex flex-col justify-center">
-          <span className="text-[10px] font-bold text-slate-400 uppercase">도움 요청</span>
-          <span className="text-xl font-bold text-slate-800">{Object.values(wordClicks).reduce((a, b) => a + b, 0)}회</span>
+      
+      {/* 1. 최상단 요약 바 (고정 높이) */}
+      <div className="h-16 flex-shrink-0 flex items-center justify-between px-6 bg-white rounded-2xl border border-slate-100">
+        <div className="flex gap-8">
+          <div className="flex flex-col">
+            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Session Status</span>
+            <span className="text-xs font-black text-emerald-500 uppercase flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span> Live Monitoring
+            </span>
+          </div>
+          <div className="flex flex-col">
+            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Active Students</span>
+            <span className="text-xs font-black text-slate-700">{totalStudents}명 연결됨</span>
+          </div>
         </div>
-        {/* [Step 3 신규] 맥락 미이해 실시간 카운트 표시 */}
-        <div className="bg-rose-50 rounded-2xl border border-rose-100 p-4 flex flex-col justify-center">
-          <span className="text-[10px] font-bold text-rose-400 uppercase tracking-tighter">맥락 미이해</span>
-          <span className="text-xl font-bold text-rose-600">{misunderstandingCount}명</span>
-        </div>
-        <div className="bg-white rounded-2xl border border-slate-100 p-4 flex flex-col justify-center">
-          <span className="text-[10px] font-bold text-slate-400 uppercase">최다 질문</span>
-          <span className="text-xl font-bold text-indigo-600 truncate">{sortedWords[0][0]}</span>
-        </div>
-        <div className="bg-white rounded-2xl border border-slate-100 p-4 flex flex-col justify-center">
-          <span className="text-[10px] font-bold text-slate-400 uppercase">속도 지수</span>
-          <span className={`text-xl font-bold ${lectureTempo > 70 ? 'text-rose-500' : 'text-emerald-500'}`}>{lectureTempo}%</span>
+        <div className="flex items-center gap-2 bg-indigo-50 px-4 py-2 rounded-xl border border-indigo-100">
+          <span className="text-[10px] font-black text-indigo-400 uppercase">Tempo</span>
+          <span className="text-sm font-black text-indigo-600">{lectureTempo}%</span>
         </div>
       </div>
 
-      <div className="flex-1 flex gap-4 min-h-0">
-        <div className="flex-[3] flex flex-col gap-4 min-w-0">
-          <div className="flex-1 bg-white rounded-3xl border border-slate-100 p-6 flex flex-col min-h-0">
-            <h3 className="text-sm font-bold text-slate-800 mb-4">실시간 키워드 히트맵</h3>
-            <div className="flex-1 overflow-y-auto pr-2 space-y-4">
-              {sortedWords.map(([word, count], i) => (
-                <div key={word} className="space-y-1">
-                  <div className="flex justify-between text-[11px] font-bold text-slate-500">
-                    <span>{i + 1}. {word}</span>
-                    <span>{count}회</span>
-                  </div>
-                  <div className="w-full bg-slate-50 rounded-full h-1.5 overflow-hidden">
-                    <motion.div initial={{ width: 0 }} animate={{ width: `${(count / maxClicks) * 100}%` }} className="h-full bg-indigo-500 rounded-full" />
-                  </div>
+      {/* 2. 메인 콘텐츠: 3대 패널 그리드 (3:3:4 비율) */}
+      <div className="flex-1 flex gap-4 min-h-0 overflow-hidden">
+        
+        {/* 패널 1: 모르는 단어 (히트맵) - 비율 3 */}
+        <section className="flex-[3] bg-white rounded-3xl border border-slate-100 p-6 flex flex-col min-h-0 shadow-sm">
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-sm font-black text-slate-800 flex items-center gap-2">
+              <span className="w-1.5 h-1.5 bg-indigo-500 rounded-full"></span>
+              용어 질문 빈도 (Heatmap)
+            </h3>
+          </div>
+          <div className="flex-1 overflow-y-auto pr-2 space-y-5">
+            {sortedWords.map(([word, count], i) => (
+              <div key={word} className="space-y-1.5">
+                <div className="flex justify-between text-[11px] font-bold text-slate-600">
+                  <span>{i+1}. {word}</span>
+                  <span className={count > 5 ? 'text-indigo-600' : 'text-slate-400'}>{count}회</span>
                 </div>
-              ))}
+                <div className="w-full bg-slate-50 rounded-full h-1.5 overflow-hidden border border-slate-100/50">
+                  <motion.div 
+                    initial={{ width: 0 }}
+                    animate={{ width: `${(count / maxClicks) * 100}%` }}
+                    className="h-full bg-indigo-500 rounded-full"
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* 패널 2: 이해 안 되는 내용 (미이해 지수) - 비율 3 */}
+        <section className="flex-[3] bg-white rounded-3xl border border-slate-100 p-6 flex flex-col min-h-0 shadow-sm">
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-sm font-black text-slate-800 flex items-center gap-2">
+              <span className="w-1.5 h-1.5 bg-rose-500 rounded-full"></span>
+              맥락 미이해 지수 (Ratio)
+            </h3>
+          </div>
+          
+          <div className="flex-1 flex flex-col items-center justify-center">
+            <div className="relative w-36 h-36 flex items-center justify-center mb-8">
+              {/* 원형 시각화 */}
+              <svg className="w-full h-full transform -rotate-90">
+                <circle cx="72" cy="72" r="64" stroke="currentColor" strokeWidth="10" fill="transparent" className="text-slate-50" />
+                <motion.circle 
+                  cx="72" cy="72" r="64" stroke="currentColor" strokeWidth="10" fill="transparent" 
+                  strokeDasharray={402}
+                  animate={{ strokeDashoffset: 402 - (402 * misunderstandingRatio) / 100 }}
+                  className="text-rose-500"
+                  strokeLinecap="round"
+                />
+              </svg>
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <span className="text-4xl font-black text-slate-800">{misunderstandingRatio}%</span>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Confusion</span>
+              </div>
+            </div>
+            
+            <div className="w-full bg-rose-50 rounded-2xl p-5 border border-rose-100 text-center">
+              <p className="text-[10px] font-bold text-rose-400 uppercase mb-1">놓치고 있는 학생 수</p>
+              <p className="text-2xl font-black text-rose-700">{misunderstandingCount} <span className="text-xs text-rose-400 font-bold">/ {totalStudents}명</span></p>
             </div>
           </div>
-        </div>
-        <div className="flex-[2] bg-slate-900 rounded-3xl p-6 flex flex-col min-h-0 text-white">
-          <h3 className="text-sm font-bold mb-4 flex items-center gap-2">
-            <span className="text-indigo-400">✦</span> AI 중재 가이드
-          </h3>
-          <div className="flex-1 overflow-y-auto space-y-3 pr-2">
+        </section>
+
+        {/* 패널 3: AI 강의 도우미 (종합 분석) - 비율 4 */}
+        <section className="flex-[4] bg-slate-900 rounded-3xl p-6 flex flex-col min-h-0 text-white shadow-2xl relative overflow-hidden">
+          {/* 배경 데코레이션 */}
+          <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full -mr-16 -mt-16 blur-3xl"></div>
+          
+          <div className="flex justify-between items-center mb-6 relative z-10">
+            <h3 className="text-sm font-black flex items-center gap-2">
+              <span className="text-indigo-400 text-lg">✦</span>
+              AI 중재 어시스턴트
+            </h3>
+            <div className="px-2 py-1 bg-white/5 border border-white/10 rounded-lg text-[9px] font-bold text-slate-400 uppercase tracking-widest">Context Analyzing</div>
+          </div>
+          
+          <div className="flex-1 overflow-y-auto space-y-4 pr-2 relative z-10">
             <AnimatePresence mode="popLayout">
               {aiInsights.length === 0 ? (
-                <p className="text-slate-500 text-xs italic text-center mt-10">실시간 분석 대기 중</p>
+                <div className="h-full flex flex-col items-center justify-center opacity-30 py-20 text-center">
+                  <span className="text-4xl mb-4">🤖</span>
+                  <p className="text-xs italic font-medium leading-relaxed">데이터가 충분히 수집되면<br/>AI가 맞춤형 강의 전략을 제안합니다.</p>
+                </div>
               ) : (
-                aiInsights.map((ins) => (
-                  <motion.div key={ins.title} initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} className={`p-4 rounded-xl border-l-4 ${ins.type === 'danger' ? 'bg-rose-500/10 border-rose-500' : ins.type === 'warning' ? 'bg-amber-500/10 border-amber-500' : 'bg-indigo-500/10 border-indigo-500'}`}>
-                    <h4 className={`text-xs font-bold mb-1 ${ins.type === 'danger' ? 'text-rose-400' : ins.type === 'warning' ? 'text-amber-400' : 'text-indigo-400'}`}>{ins.title}</h4>
-                    <p className="text-[10px] text-slate-400 leading-normal">{ins.desc}</p>
+                aiInsights.map((ins, i) => (
+                  <motion.div 
+                    key={ins.title}
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    className={`p-5 rounded-2xl border-l-4 shadow-lg ${
+                      ins.type === 'danger' ? 'bg-rose-500/10 border-rose-500' : 
+                      ins.type === 'warning' ? 'bg-amber-500/10 border-amber-500' : 'bg-indigo-500/10 border-indigo-500'
+                    }`}
+                  >
+                    <h4 className={`text-[10px] font-black mb-2 uppercase tracking-widest ${
+                      ins.type === 'danger' ? 'text-rose-400' : 
+                      ins.type === 'warning' ? 'text-amber-400' : 'text-indigo-400'
+                    }`}>{ins.title}</h4>
+                    <p className="text-[11px] leading-relaxed text-slate-300 font-medium">{ins.desc}</p>
                   </motion.div>
                 ))
               )}
             </AnimatePresence>
           </div>
-        </div>
+          
+          <div className="mt-6 pt-6 border-t border-white/10 relative z-10">
+            <div className="bg-white/5 p-4 rounded-2xl border border-white/5 flex items-start gap-3">
+              <span className="text-lg">💡</span>
+              <p className="text-[10px] text-slate-400 font-medium leading-relaxed">
+                AI 데이터 팁: 현재 이해도 저하는 강의 초반의 개념 정의 부족에서 기인할 수 있습니다. 짤막한 Q&A 시간을 가져보세요.
+              </p>
+            </div>
+          </div>
+        </section>
+
       </div>
     </div>
   );
