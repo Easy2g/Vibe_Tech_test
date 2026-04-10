@@ -12,6 +12,10 @@ export default function App() {
   const [isConnected, setIsConnected] = useState(false);
   const [lectureCode, setLectureCode] = useState('');
   const [teacherName, setTeacherName] = useState('');
+  
+  // [Step 2 신규] 강의 컨텍스트 및 시작 여부 상태
+  const [isLectureStarted, setIsLectureStarted] = useState(false);
+  const [lectureContext, setLectureContext] = useState(null);
 
   // 학생들의 단어 클릭 수를 저장하는 상태
   const [wordClicks, setWordClicks] = useState({
@@ -34,6 +38,12 @@ export default function App() {
     }
   };
 
+  // [Step 2 신규] 강의 시작 핸들러: 분석된 컨텍스트를 저장하고 대시보드를 활성화합니다.
+  const handleStartLecture = (context) => {
+    setLectureContext(context);
+    setIsLectureStarted(true);
+  };
+
   // 단어 클릭 시 호출되는 핸들러
   const handleWordClick = (word) => {
     setWordClicks(prev => ({ ...prev, [word]: prev[word] + 1 }));
@@ -49,10 +59,11 @@ export default function App() {
   const handleExit = () => {
     setRole(null);
     setIsConnected(false);
-    // 선택 사항: 세션 데이터 초기화가 필요하다면 여기서 수행
+    setIsLectureStarted(false);
+    setLectureContext(null);
   };
 
-  // 앱 진입 시 역할 선택 화면 노출 (강의 코드를 전달하여 학생 입장 시 대조 가능하게 함)
+  // 앱 진입 시 역할 선택 화면 노출
   if (!role) {
     return <RoleSelection onSelect={handleRoleSelect} lectureCode={lectureCode} />;
   }
@@ -108,7 +119,12 @@ export default function App() {
             )}
             
             {role === 'teacher' && (
-              <TeacherDashboard wordClicks={wordClicks} lectureTempo={lectureTempo} />
+              <TeacherDashboard 
+                wordClicks={wordClicks} 
+                lectureTempo={lectureTempo} 
+                isStarted={isLectureStarted}
+                onStart={handleStartLecture}
+              />
             )}
 
             {role === 'simulator' && (
@@ -119,7 +135,12 @@ export default function App() {
                 </div>
                 <div className="flex-1 lg:pl-2 min-h-0 overflow-hidden">
                   <h2 className="text-[10px] font-bold text-slate-300 mb-4 uppercase tracking-tighter">Teacher Dashboard</h2>
-                  <TeacherDashboard wordClicks={wordClicks} lectureTempo={lectureTempo} />
+                  <TeacherDashboard 
+                    wordClicks={wordClicks} 
+                    lectureTempo={lectureTempo} 
+                    isStarted={isLectureStarted}
+                    onStart={handleStartLecture}
+                  />
                 </div>
               </div>
             )}
