@@ -98,18 +98,33 @@ function StudentEntryModal({ validCode, onClose, onEntry }) {
     e.preventDefault();
     
     // [가상 서버] localStorage에서 현재 활성화된 강의 정보 확인
-    const savedLecture = localStorage.getItem('vibe_lecture_info');
-    let currentValidCode = validCode || '123456';
+    const savedLecture = localStorage.getItem('lectureData');
     
-    if (savedLecture) {
-      const data = JSON.parse(savedLecture);
-      currentValidCode = data.code;
+    if (!savedLecture) {
+      alert('현재 생성된 강의가 없거나 아직 강의가 시작되지 않았습니다. 교수님의 시작을 기다려주세요.');
+      return;
     }
 
-    if (inputCode === currentValidCode) {
+    try {
+      const data = JSON.parse(savedLecture);
+      
+      // 1. 강의 코드 일치 여부 확인
+      if (inputCode !== data.code) {
+        alert('강의 코드가 일치하지 않습니다. 다시 확인해주세요.');
+        return;
+      }
+
+      // 2. 강의 시작 여부 확인 (교수가 '강의 시작' 버튼을 눌렀는지)
+      if (!data.isStarted) {
+        alert('교수님이 아직 강의를 시작하지 않았습니다. 잠시만 대기해주세요.');
+        return;
+      }
+
+      // 모든 조건 만족 시 입장
       onEntry();
-    } else {
-      alert('강의 코드가 일치하지 않거나 현재 열려있는 강의가 없습니다.');
+      
+    } catch (err) {
+      alert('강의 정보를 읽어오는 중 오류가 발생했습니다.');
     }
   };
 
