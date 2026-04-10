@@ -48,13 +48,16 @@ function TeacherLoginModal({ onClose, onLogin }) {
   };
   return (
     <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-md">
-      <motion.form onSubmit={handleSubmit} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="bg-white p-8 rounded-3xl shadow-2xl w-full max-w-sm space-y-6">
+      <motion.form onSubmit={handleSubmit} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="bg-white p-8 rounded-3xl shadow-2xl w-full max-w-sm space-y-6 relative">
+        <button type="button" onClick={onClose} className="absolute top-6 right-6 text-slate-400 hover:text-slate-600 transition-colors">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
         <h2 className="text-xl font-bold text-slate-800">교수 인증</h2>
         <div className="space-y-4">
           <input type="text" placeholder="성함" required value={name} onChange={e => setName(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200" />
           <input type="password" placeholder="비밀번호" required value={pw} onChange={e => setPw(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200" />
         </div>
-        <button type="submit" className="w-full py-3 bg-indigo-600 text-white font-bold rounded-xl">입장하기</button>
+        <button type="submit" className="w-full py-3 bg-indigo-600 text-white font-bold rounded-xl shadow-lg shadow-indigo-200">입장하기</button>
       </motion.form>
     </div>
   );
@@ -69,10 +72,14 @@ function StudentEntryModal({ validCode, onClose, onEntry }) {
   };
   return (
     <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-md">
-      <motion.form onSubmit={handleSubmit} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="bg-white p-8 rounded-3xl shadow-2xl w-full max-w-sm space-y-6 text-center">
+      <motion.form onSubmit={handleSubmit} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="bg-white p-8 rounded-3xl shadow-2xl w-full max-w-sm space-y-6 text-center relative">
+        <button type="button" onClick={onClose} className="absolute top-6 right-6 text-slate-400 hover:text-slate-600 transition-colors">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
         <h2 className="text-xl font-bold text-slate-800">강의 참여</h2>
-        <input type="text" placeholder="000000" maxLength={6} required value={inputCode} onChange={e => setInputCode(e.target.value)} className="w-full px-4 py-4 text-center text-3xl font-black rounded-2xl border-2 border-slate-100" />
-        <button type="submit" className="w-full py-3 bg-indigo-600 text-white font-bold rounded-xl">참여하기</button>
+        <p className="text-xs text-slate-400 font-medium">교수님께 받은 6자리 코드를 입력해주세요.</p>
+        <input type="text" placeholder="000000" maxLength={6} required value={inputCode} onChange={e => setInputCode(e.target.value)} className="w-full px-4 py-4 text-center text-3xl font-black rounded-2xl border-2 border-slate-100 focus:border-indigo-500 transition-all outline-none" />
+        <button type="submit" className="w-full py-3 bg-indigo-600 text-white font-bold rounded-xl shadow-lg shadow-indigo-200">참여하기</button>
       </motion.form>
     </div>
   );
