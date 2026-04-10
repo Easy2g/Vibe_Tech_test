@@ -12,13 +12,13 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
 
   const misunderstandingRatio = Math.round((misunderstandingCount / studentCount) * 100);
 
-  // [Step 5] Web Speech API를 활용한 실시간 음성 인식 및 데이터 전달
+  // [STT 수리] Web Speech API를 활용한 실시간 음성 인식 및 데이터 전달
   useEffect(() => {
     if (!isStarted || !('webkitSpeechRecognition' in window)) return;
 
     const recognition = new window.webkitSpeechRecognition();
-    recognition.continuous = true;
-    recognition.interimResults = true;
+    recognition.continuous = true;     // 교수가 말을 멈춰도 종료되지 않음
+    recognition.interimResults = true; // 중간 결과 즉시 반영
     recognition.lang = 'ko-KR';
 
     recognition.onresult = (event) => {
@@ -28,11 +28,22 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
           currentText += event.results[i][0].transcript;
         }
       }
-      if (currentText) onLiveTextUpdate(currentText);
+      // 인식된 결과가 있을 때만 브로드캐스트
+      if (currentText.trim()) {
+        onLiveTextUpdate(currentText);
+      }
+    };
+
+    // 예기치 않게 종료될 경우 자동 재시작 로직
+    recognition.onend = () => {
+      if (isStarted) recognition.start();
     };
 
     recognition.start();
-    return () => recognition.stop();
+    return () => {
+      recognition.onend = null;
+      recognition.stop();
+    };
   }, [isStarted, onLiveTextUpdate]);
 
   // [Step 5] 고도화된 AI 맥락 분석: 학생 피드백과 실시간 음성을 종합 분석

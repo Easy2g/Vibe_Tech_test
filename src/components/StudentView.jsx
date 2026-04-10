@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { WordExplanationModal } from './SharedUI';
 
@@ -9,6 +9,14 @@ export default function StudentView({ onWordClick, lastActivity, onTempoChange, 
   const [selectedWord, setSelectedWord] = useState(null);
   const [showFeedback, setShowFeedback] = useState(false);
   const [startTime] = useState(Date.now());
+  const scrollRef = useRef(null);
+
+  // [수리] 자막 업데이트 시 자동 스크롤 최하단 이동
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [liveText]);
 
   // 15초간 무반응 시 속도 조절 팝업 노출
   useEffect(() => {
@@ -37,7 +45,7 @@ export default function StudentView({ onWordClick, lastActivity, onTempoChange, 
             <span className="text-[10px] font-bold text-slate-300">Speech-to-Text Active</span>
           </div>
           
-          <div className="flex-1 overflow-y-auto pr-2">
+          <div ref={scrollRef} className="flex-1 overflow-y-auto pr-2 scroll-smooth">
             <p className="text-xl md:text-2xl text-slate-700 font-semibold leading-[2.2] break-keep">
               {liveText || "강의가 시작되면 이곳에 교수님의 음성이 실시간 자막으로 변환되어 표시됩니다."}
               <span className="inline-flex gap-2 ml-4">
