@@ -1,17 +1,18 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { RoleSelection } from './components/SharedUI';
 import StudentView from './components/StudentView';
 import TeacherDashboard from './components/TeacherDashboard';
 import { AnimatePresence, motion } from 'framer-motion';
 
 /**
- * 가상 서버 데이터 키 정의 (수리 및 통일 버전)
+ * 실전 프로덕션 모드: 가상 서버 키 (데이터 고속도로)
  */
 const STORAGE_KEYS = {
-  LECTURE_DATA: 'lectureData',      // [수리] 강의 정보 및 요약본 키 통일
-  LIVE_TRANSCRIPT: 'liveTranscript', 
-  FEEDBACK: 'vibe_feedback_data',   
-  STUDENTS: 'vibe_student_list',    
+  LECTURE_STATUS: 'vibe_lecture_status', // 강의 진행 상태
+  LECTURE_DATA: 'vibe_lecture_data',     // { topic, keyPoints, summary }
+  LIVE_TRANSCRIPT: 'vibe_live_transcript',// 실시간 자막 방송
+  FEEDBACK: 'vibe_feedback_data',        // 클릭, 미이해 데이터
+  STUDENTS: 'vibe_student_list',         // 접속자 명단
 };
 
 export default function App() {
@@ -20,6 +21,7 @@ export default function App() {
   const [lectureCode, setLectureCode] = useState('');
   const [teacherName, setTeacherName] = useState('');
   const [studentCount, setStudentCount] = useState(0);
+  
   const [isLectureStarted, setIsLectureStarted] = useState(false);
   const [lectureContext, setLectureContext] = useState(null);
   const [liveText, setLiveText] = useState('');
@@ -30,11 +32,11 @@ export default function App() {
   const [lectureTempo, setLectureTempo] = useState(50);
   const [lastActivity, setLastActivity] = useState(Date.now());
 
-  // [수리] 가상 서버 실시간 데이터 수신 및 일관성 보장
+  // [실시간 데이터 고속도로] 0.1초 내외 동기화
   useEffect(() => {
     const handleStorageSync = (e) => {
       if (!e.newValue) {
-        if (e.key === STORAGE_KEYS.LECTURE_DATA) {
+        if (e.key === STORAGE_KEYS.LECTURE_STATUS) {
           setIsLectureStarted(false);
           setLectureContext(null);
         }
@@ -45,49 +47,43 @@ export default function App() {
         const data = JSON.parse(e.newValue);
 
         switch (e.key) {
-          case STORAGE_KEYS.LECTURE_DATA:
-            // 교수가 보낸 lectureData를 즉시 수신하여 상태 반영
-            setLectureCode(data.code || lectureCode);
-            setLectureContext(data.context || data); 
-            setIsLectureStarted(true);
+          case STORAGE_KEYS.LECTURE_STATUS:
+            setIsLectureStarted(data.isStarted);
             break;
-          
+          case STORAGE_KEYS.LECTURE_DATA:
+            setLectureContext(data);
+            break;
           case STORAGE_KEYS.LIVE_TRANSCRIPT:
             if (role === 'student') {
-              setLiveText(prev => (prev.length > 1000 ? data.text : prev + ' ' + data.text));
+              setLiveText(prev => (prev.length > 2000 ? data.text : prev + ' ' + data.text));
             }
             break;
-
           case STORAGE_KEYS.FEEDBACK:
             setMisunderstandingCount(data.misunderstandingCount);
             setWordClicks(data.wordClicks);
+            setLectureTempo(data.lectureTempo);
             break;
-
           case STORAGE_KEYS.STUDENTS:
             setStudentCount(data.length);
             break;
         }
       } catch (err) {
-        console.error("동기화 파싱 오류:", err);
+        console.error("데이터 동기화 파싱 오류");
       }
     };
 
     window.addEventListener('storage', handleStorageSync);
     
-    // 초기 로드 시 기존 데이터 복원
-    const saved = localStorage.getItem(STORAGE_KEYS.LECTURE_DATA);
-    if (saved) {
-      try {
-        const data = JSON.parse(saved);
-        setLectureContext(data.context || data);
-        setIsLectureStarted(true);
-      } catch(e) {}
-    }
+    // 초기 로드 시 기존 세션 복원
+    const savedStatus = localStorage.getItem(STORAGE_KEYS.LECTURE_STATUS);
+    if (savedStatus) setIsLectureStarted(JSON.parse(savedStatus).isStarted);
+    
+    const savedData = localStorage.getItem(STORAGE_KEYS.LECTURE_DATA);
+    if (savedData) setLectureContext(JSON.parse(savedData));
 
     return () => window.removeEventListener('storage', handleStorageSync);
-  }, [role, lectureCode]);
+  }, [role]);
 
-  // 역할 선택 및 접속
   const handleRoleSelect = (selectedRole, data) => {
     setRole(selectedRole);
     if (data) {
@@ -104,31 +100,36 @@ export default function App() {
     }
   };
 
-  // 강의 시작 (교수 전용) - lectureData 키로 표준화된 데이터 저장
   const handleStartLecture = (context) => {
-    const lectureData = { code: lectureCode, context, isStarted: true };
-    localStorage.setItem(STORAGE_KEYS.LECTURE_DATA, JSON.stringify(lectureData));
+    localStorage.setItem(STORAGE_KEYS.LECTURE_STATUS, JSON.stringify({ isStarted: true }));
+    localStorage.setItem(STORAGE_KEYS.LECTURE_DATA, JSON.stringify(context));
     setLectureContext(context);
     setIsLectureStarted(true);
   };
 
   const handleLiveTextUpdate = useCallback((text) => {
     if (role === 'teacher') {
-      setLiveText(prev => (prev.length > 500 ? text : prev + ' ' + text));
-      localStorage.setItem(STORAGE_KEYS.LIVE_TRANSCRIPT, JSON.stringify({ text, timestamp: Date.now() }));
+      setLiveText(prev => (prev.length > 2000 ? text : prev + ' ' + text));
+      // TeacherDashboard에서 개별적으로 전송하므로 여기서는 로컬 상태만 업데이트
     }
   }, [role]);
+
+  const broadcastFeedback = (updates) => {
+    const currentFeedback = { misunderstandingCount, wordClicks, lectureTempo, ...updates };
+    localStorage.setItem(STORAGE_KEYS.FEEDBACK, JSON.stringify(currentFeedback));
+  };
 
   const handleWordClick = (word) => {
     const newClicks = { ...wordClicks, [word]: wordClicks[word] + 1 };
     setWordClicks(newClicks);
-    localStorage.setItem(STORAGE_KEYS.FEEDBACK, JSON.stringify({ misunderstandingCount, wordClicks: newClicks }));
+    setLastActivity(Date.now());
+    broadcastFeedback({ wordClicks: newClicks });
   };
 
   const handleMisunderstanding = () => {
     const newCount = misunderstandingCount + 1;
     setMisunderstandingCount(newCount);
-    localStorage.setItem(STORAGE_KEYS.FEEDBACK, JSON.stringify({ misunderstandingCount: newCount, wordClicks }));
+    broadcastFeedback({ misunderstandingCount: newCount });
   };
 
   const handleExit = () => {
@@ -144,44 +145,33 @@ export default function App() {
 
   if (!role) return <RoleSelection onSelect={handleRoleSelect} lectureCode={lectureCode} />;
 
+  // 시뮬레이터(통합뷰) 렌더링 제거, 프로덕션 1:1 뷰 적용
   return (
     <div className="h-screen bg-slate-50 text-slate-900 font-sans flex flex-col overflow-hidden">
-      <nav className="h-16 bg-white border-b border-slate-100 px-6 flex justify-between items-center flex-shrink-0 z-50">
+      <nav className="h-16 bg-white border-b border-slate-100 px-6 flex justify-between items-center flex-shrink-0 z-50 shadow-sm">
         <div className="flex items-center gap-4">
-          <h1 className="text-lg font-bold text-slate-800">Vibe Bridge</h1>
+          <h1 className="text-lg font-black text-slate-800 tracking-tight">Vibe Bridge <span className="text-xs font-bold text-indigo-500 ml-2 bg-indigo-50 px-2 py-0.5 rounded-md">PRO</span></h1>
           {isConnected && (
             <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="flex items-center gap-2 bg-indigo-50 px-3 py-1 rounded-full border border-indigo-100">
-              <span className="text-[10px] font-black text-indigo-400 uppercase">Code</span>
+              <span className="text-[10px] font-black text-indigo-400 uppercase">Live Code</span>
               <span className="text-sm font-black text-indigo-600 tracking-widest">{lectureCode}</span>
             </motion.div>
           )}
         </div>
         <div className="flex items-center gap-4">
           <div className="text-right hidden sm:block">
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Session Info</p>
-            <p className="text-xs font-bold text-slate-700">{role === 'teacher' ? `👨‍🏫 ${teacherName} 교수` : role === 'student' ? '👨‍🎓 학생' : '🚀 시뮬레이터'}</p>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Session User</p>
+            <p className="text-xs font-bold text-slate-700">{role === 'teacher' ? `👨‍🏫 ${teacherName} 교수` : '👨‍🎓 학생'}</p>
           </div>
-          <button onClick={handleExit} className="text-[11px] font-bold bg-slate-100 text-slate-500 hover:bg-rose-50 hover:text-rose-600 px-4 py-2 rounded-xl transition-all">나가기</button>
+          <button onClick={handleExit} className="text-[11px] font-bold bg-slate-100 text-slate-500 hover:bg-rose-50 hover:text-rose-600 px-4 py-2 rounded-xl transition-all">강의 종료</button>
         </div>
       </nav>
 
       <main className="flex-1 p-6 max-w-7xl mx-auto w-full min-h-0 overflow-hidden">
         <AnimatePresence mode="wait">
           <motion.div key={role} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="h-full">
-            {role === 'student' && <StudentView onWordClick={handleWordClick} lastActivity={lastActivity} onTempoChange={v => setLectureTempo(v)} lectureTempo={lectureTempo} onMisunderstand={handleMisunderstanding} liveText={liveText} lectureContext={lectureContext} />}
+            {role === 'student' && <StudentView onWordClick={handleWordClick} lastActivity={lastActivity} onTempoChange={v => {setLectureTempo(v); broadcastFeedback({lectureTempo: v})}} lectureTempo={lectureTempo} onMisunderstand={handleMisunderstanding} liveText={liveText} lectureContext={lectureContext} />}
             {role === 'teacher' && <TeacherDashboard wordClicks={wordClicks} lectureTempo={lectureTempo} isStarted={isLectureStarted} onStart={handleStartLecture} misunderstandingCount={misunderstandingCount} onLiveTextUpdate={handleLiveTextUpdate} studentCount={studentCount} />}
-            {role === 'simulator' && (
-              <div className="flex flex-col lg:flex-row gap-6 h-full">
-                <div className="flex-1 lg:border-r border-slate-200 lg:pr-6 overflow-y-auto">
-                  <h2 className="text-[10px] font-bold text-slate-300 mb-4 uppercase tracking-tighter">Student Interface</h2>
-                  <StudentView onWordClick={handleWordClick} lastActivity={lastActivity} onTempoChange={v => setLectureTempo(v)} lectureTempo={lectureTempo} onMisunderstand={handleMisunderstanding} liveText={liveText} lectureContext={lectureContext} />
-                </div>
-                <div className="flex-1 lg:pl-2 min-h-0 overflow-hidden">
-                  <h2 className="text-[10px] font-bold text-slate-300 mb-4 uppercase tracking-tighter">Teacher Dashboard</h2>
-                  <TeacherDashboard wordClicks={wordClicks} lectureTempo={lectureTempo} isStarted={isLectureStarted} onStart={handleStartLecture} misunderstandingCount={misunderstandingCount} onLiveTextUpdate={handleLiveTextUpdate} studentCount={studentCount} />
-                </div>
-              </div>
-            )}
           </motion.div>
         </AnimatePresence>
       </main>
