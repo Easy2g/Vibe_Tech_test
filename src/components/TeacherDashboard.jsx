@@ -11,32 +11,36 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
   const [analysisProgress, setAnalysisProgress] = useState(0);
   const [isAnalyzed, setIsAnalyzed] = useState(false);
   const [analyzedSummary, setAnalyzedSummary] = useState(null);
+  const [sttStatus, setSttStatus] = useState('idle'); // 마이크 상태: listening, error, idle
   
   const [aiInsights, setAiInsights] = useState([]);
   const transcriptBuffer = useRef(""); 
+  const scrollRef = useRef(null); // 자막 스크롤용
 
   const misunderstandingRatio = studentCount > 0 ? Math.round((misunderstandingCount / studentCount) * 100) : 0;
 
-  // [탭 간 실시간 통신] 자막 전용 브로드캐스트 채널 생성
+  // [탭 간 실시간 통신] 자막 전용 브로드캐스트 채널
   const subtitleChannel = useMemo(() => new BroadcastChannel('vibe_subtitle_channel'), []);
 
   // [배포용 브라우저 내장 STT 및 자동 복구 로직]
   useEffect(() => {
     if (!isStarted || !('webkitSpeechRecognition' in window)) return;
 
-    // 다른 탭에서 방송된 자막 수신 리스너
+    // 다른 탭에서 방송된 자막 수신 시 UI 반영
     subtitleChannel.onmessage = (event) => {
       const { text, isFinal } = event.data;
-      if (text && isFinal) {
-        // 다른 탭(교수 모드 등)에서 생성된 자막을 내 화면에도 즉시 반영
-        onLiveTextUpdate(text);
-      }
+      if (text && isFinal) onLiveTextUpdate(text);
     };
 
     const recognition = new window.webkitSpeechRecognition();
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.lang = 'ko-KR';
+
+    recognition.onstart = () => {
+      setSttStatus('listening'); // [시연용] 상태 표시등 초록색 전환
+      console.log("🎤 음성 분석 시작됨");
+    };
 
     recognition.onresult = (event) => {
       let currentText = '';
@@ -46,10 +50,10 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
           currentText += text;
           transcriptBuffer.current += " " + text;
           
-          // [탭 간 자막 방송] 실시간으로 다른 탭들에 자막 데이터 전송
+          // 탭 간 실시간 공유
           subtitleChannel.postMessage({ text, isFinal: true, timestamp: Date.now() });
 
-          // [실시간 데이터 전파] 로컬 저장소 백업 및 UI 업데이트
+          // 로컬 저장 및 UI 업데이트
           localStorage.setItem('vibe_live_transcript', JSON.stringify({ 
             text, 
             timestamp: Date.now(),
@@ -61,23 +65,30 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
     };
 
     recognition.onerror = (event) => {
-      if (event.error === 'no-speech') return;
-      console.error("STT 에러 발생:", event.error);
+      if (event.error === 'no-speech') return; // 침묵 시에는 에러 메시지 생략
+      
+      console.error("STT 에러:", event.error);
+      setSttStatus('error'); // [시연용] 상태 표시등 빨간색 전환
+      
+      // 에러 발생 시 1.5초 뒤 자동 부활 시도
+      setTimeout(() => {
+        if (isStarted) try { recognition.start(); } catch(e) {}
+      }, 1500);
     };
 
     recognition.onend = () => { 
       if (isStarted) {
+        setSttStatus('idle');
         try { recognition.start(); } catch(e) {}
       } 
     };
 
     recognition.start();
-    console.log("🎤 실시간 음성 분석 시스템이 가동되었습니다.");
 
     return () => { 
       recognition.onend = null; 
       recognition.stop(); 
-      subtitleChannel.close(); // 채널 닫기
+      subtitleChannel.close();
     };
   }, [isStarted, onLiveTextUpdate, subtitleChannel]);
 
@@ -90,7 +101,7 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
       if (currentSpeech.length < 300) return; 
 
       try {
-        console.log("📝 [Vibe Bridge] 실제 강의 음성을 바탕으로 맥락 최신화 중...");
+        console.log("📝 [AI 분석] 실제 발화 내용을 바탕으로 강의 맥락 최신화 중...");
         const newSummary = await callAnalyzeAPI(currentSpeech);
         if (newSummary) {
           localStorage.setItem('vibe_lecture_data', JSON.stringify(newSummary));
@@ -102,6 +113,13 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
     const interval = setInterval(refreshContextFromSpeech, 120000);
     return () => clearInterval(interval);
   }, [isStarted]);
+
+  // 자막 업데이트 시 자동 스크롤
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [wordClicks]); // 상호작용 발생 시 스크롤 시도
 
   const extractTextFromPDF = async (arrayBuffer) => {
     const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer, useSystemFonts: true });
@@ -118,16 +136,11 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
 
   /**
    * [Gemini 3.1 Flash-Lite 범용 분석 엔진]
-   * 모든 학문 분야의 자료를 정교하게 구조화하여 요약합니다. (철벽 파싱 로직 포함)
    */
   const callAnalyzeAPI = async (textContent) => {
     const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
-    if (!API_KEY) {
-      alert("AI 설정을 위한 API 키가 등록되지 않았습니다.");
-      return null;
-    }
+    if (!API_KEY) return null;
 
-    // [범용 학술 분석 지시문] 전공에 관계없이 논리 구조와 핵심 정의를 추출
     const universalPrompt = `당신은 전 학문 분야의 강의 자료를 정교하게 구조화하는 범용 교육 조력자 AI입니다. 
     제공된 자료에서 핵심 개념 정의, 논리적 인과관계, 주요 사례를 추출하여 반드시 다음 JSON 형식으로만 응답하세요.
     인사말이나 부연 설명은 절대 하지 말고 오직 { } 데이터만 출력하세요.
@@ -142,19 +155,15 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
         body: JSON.stringify({ contents: [{ parts: [{ text: `${universalPrompt}\n\n내용:\n${textContent.substring(0, 12000)}` }] }] })
       });
 
-      if (!response.ok) throw new Error("네트워크 응답 오류");
-
       const data = await response.json();
       const aiResultText = data.candidates[0].content.parts[0].text;
       
-      // [정규식 기반 순수 데이터 추출] 앞뒤 잡담을 제거하고 JSON만 파싱
       const jsonRegex = /\{[\s\S]*\}/;
       const match = aiResultText.match(jsonRegex);
-      
-      if (!match) throw new Error("분석 데이터 형식이 올바르지 않습니다.");
+      if (!match) throw new Error("데이터 파싱 실패");
       return JSON.parse(match[0].trim());
     } catch (err) {
-      console.error("AI 분석 실패:", err);
+      console.error("AI 분석 오류:", err);
       return null;
     }
   };
@@ -225,11 +234,9 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
         <div className="flex gap-8">
           <div className="flex flex-col">
             <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Mic Status</span>
-            <span className="text-xs font-black text-emerald-500 flex items-center gap-1.5">
-              <div className="flex gap-0.5 items-center h-3">
-                {[1,2,3,4,5].map(i => <motion.div key={i} animate={{ height: [4, 12, 4] }} transition={{ duration: 0.5, repeat: Infinity, delay: i*0.1 }} className="w-0.5 bg-emerald-500" />)}
-              </div>
-              Live Streaming (Web Speech)
+            <span className={`text-xs font-black flex items-center gap-1.5 ${sttStatus === 'error' ? 'text-rose-500' : 'text-emerald-500'}`}>
+              <span className={`w-2 h-2 rounded-full ${sttStatus === 'listening' ? 'bg-emerald-500 animate-pulse' : sttStatus === 'error' ? 'bg-rose-500' : 'bg-slate-300'}`}></span>
+              {sttStatus === 'listening' ? 'Live Streaming' : sttStatus === 'error' ? 'Mic Error' : 'Standby'}
             </span>
           </div>
           <div className="flex flex-col"><span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Audience</span><span className="text-xs font-black text-slate-700">{studentCount}명 청강 중</span></div>
