@@ -17,90 +17,54 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
 
   const misunderstandingRatio = studentCount > 0 ? Math.round((misunderstandingCount / studentCount) * 100) : 0;
 
-  // [Moonshine 엔진 연동] 16kHz PCM 오디오 스트리밍 로직
+  // [배포용 브라우저 내장 STT 및 자동 복구 로직]
+  // 서버 없이도 마이크 입력을 텍스트로 변환하며, 침묵 시 자동으로 인식을 재개합니다.
   useEffect(() => {
-    if (!isStarted) return;
+    if (!isStarted || !('webkitSpeechRecognition' in window)) return;
 
-    let socket = null;
-    let audioCtx = null;
-    let scriptNode = null;
-    let source = null;
-    let reconnectTimer = null;
+    const recognition = new window.webkitSpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = 'ko-KR';
 
-    const startSTTStream = async () => {
-      try {
-        // [설정] Moonshine 로컬 서버 WebSocket 엔드포인트
-        socket = new WebSocket('ws://localhost:8000/stream');
-        socket.binaryType = 'arraybuffer';
-
-        socket.onopen = async () => {
-          console.log("🎤 Moonshine 엔진 가동 중 (WebSocket Connected)");
+    recognition.onresult = (event) => {
+      let currentText = '';
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        if (event.results[i].isFinal) {
+          const text = event.results[i][0].transcript;
+          currentText += text;
+          transcriptBuffer.current += " " + text;
           
-          // 마이크 권한 요청 및 스트림 캡처
-          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          
-          // 16kHz 샘플링 레이트로 오디오 컨텍스트 생성 (서버 요구 규격)
-          audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
-          source = audioCtx.createMediaStreamSource(stream);
-          
-          // 4096 버퍼 사이즈로 스크립트 프로세서 생성
-          scriptNode = audioCtx.createScriptProcessor(4096, 1, 1);
-          
-          scriptNode.onaudioprocess = (e) => {
-            if (socket.readyState === WebSocket.OPEN) {
-              const inputData = e.inputBuffer.getChannelData(0);
-              // Float32 데이터를 Int16 PCM 바이너리로 변환
-              const pcmBuffer = new Int16Array(inputData.length);
-              for (let i = 0; i < inputData.length; i++) {
-                // 클리핑 방지 및 정규화
-                const s = Math.max(-1, Math.min(1, inputData[i]));
-                pcmBuffer[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-              }
-              // 서버로 바이너리 데이터 전송
-              socket.send(pcmBuffer.buffer);
-            }
-          };
-
-          source.connect(scriptNode);
-          scriptNode.connect(audioCtx.destination);
-        };
-
-        socket.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data);
-            if (data.text && data.text.trim()) {
-              const text = data.text.trim();
-              transcriptBuffer.current += " " + text;
-              
-              // 학생용 화면 실시간 동기화 (localStorage)
-              localStorage.setItem('vibe_live_transcript', JSON.stringify({ 
-                text, 
-                timestamp: Date.now(),
-                isFinal: true 
-              }));
-              onLiveTextUpdate(text);
-            }
-          } catch (e) {}
-        };
-
-        socket.onclose = () => {
-          console.warn("⚠️ STT 서버 연결 종료. 3초 후 재연결 시도...");
-          reconnectTimer = setTimeout(startSTTStream, 3000);
-        };
-
-      } catch (err) {
-        console.error("오디오 스트리밍 초기화 실패:", err);
-        alert("마이크를 연결하거나 Moonshine 서버 상태를 확인하세요.");
+          // [실시간 데이터 전파] 학생용 자막 동기화
+          localStorage.setItem('vibe_live_transcript', JSON.stringify({ 
+            text, 
+            timestamp: Date.now(),
+            isFinal: true 
+          }));
+        }
       }
+      if (currentText.trim()) onLiveTextUpdate(currentText);
     };
 
-    startSTTStream();
+    recognition.onerror = (event) => {
+      // 'no-speech' 에러는 강의 중 발생하는 자연스러운 현상이므로 무시하고 재시작 유도
+      if (event.error === 'no-speech') return;
+      console.error("STT 에러 발생:", event.error);
+    };
 
-    // Cleanup: 마이크 및 소켓 리소스 해제
-    return () => {
-      if (audioCtx) audioCtx.close();
-      if (socket) socket.close();
-      if (reconnectTimer) clearTimeout(reconnectTimer);
+    recognition.onend = () => { 
+      // 강의가 진행 중일 경우 엔진이 꺼지면 즉시 다시 켬 (무한 루프)
+      if (isStarted) {
+        try { recognition.start(); } catch(e) {}
+      } 
+    };
+
+    recognition.start();
+    console.log("🎤 실시간 음성 분석 시스템이 가동되었습니다.");
+
+    return () => { 
+      recognition.onend = null; 
+      recognition.stop(); 
     };
   }, [isStarted, onLiveTextUpdate]);
 
@@ -113,7 +77,7 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
       if (currentSpeech.length < 300) return; 
 
       try {
-        console.log("📝 [Vibe Bridge] 실시간 음성 기반 강의 요약 갱신 중...");
+        console.log("📝 [Vibe Bridge] 실제 강의 음성을 바탕으로 맥락 최신화 중...");
         const newSummary = await callAnalyzeAPI(currentSpeech);
         if (newSummary) {
           localStorage.setItem('vibe_lecture_data', JSON.stringify(newSummary));
@@ -141,16 +105,21 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
 
   /**
    * [Gemini 3.1 Flash-Lite 범용 분석 엔진]
-   * 모든 학문 분야의 자료를 정교하게 구조화하여 요약합니다.
+   * 모든 학문 분야의 자료를 정교하게 구조화하여 요약합니다. (철벽 파싱 로직 포함)
    */
   const callAnalyzeAPI = async (textContent) => {
     const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
-    if (!API_KEY) return null;
+    if (!API_KEY) {
+      alert("AI 설정을 위한 API 키가 등록되지 않았습니다.");
+      return null;
+    }
 
+    // [범용 학술 분석 지시문] 전공에 관계없이 논리 구조와 핵심 정의를 추출
     const universalPrompt = `당신은 전 학문 분야의 강의 자료를 정교하게 구조화하는 범용 교육 조력자 AI입니다. 
-    반드시 다음 JSON 형식으로만 응답하세요:
-    { "topic": "강의 주제", "keyPoints": ["핵심1", "핵심2", "학술적근거1", "학술적근거2"], "summary": "구조적 3줄 요약" }
-    [주의] 인사말 없이 오직 JSON 데이터만 출력하세요.`;
+    제공된 자료에서 핵심 개념 정의, 논리적 인과관계, 주요 사례를 추출하여 반드시 다음 JSON 형식으로만 응답하세요.
+    인사말이나 부연 설명은 절대 하지 말고 오직 { } 데이터만 출력하세요.
+    
+    { "topic": "강의 주제", "keyPoints": ["핵심1", "핵심2", "학술적근거1", "학술적근거2"], "summary": "구조적 3줄 요약" }`;
 
     try {
       const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=${API_KEY}`;
@@ -160,15 +129,19 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
         body: JSON.stringify({ contents: [{ parts: [{ text: `${universalPrompt}\n\n내용:\n${textContent.substring(0, 12000)}` }] }] })
       });
 
+      if (!response.ok) throw new Error("네트워크 응답 오류");
+
       const data = await response.json();
       const aiResultText = data.candidates[0].content.parts[0].text;
+      
+      // [정규식 기반 순수 데이터 추출] 앞뒤 잡담을 제거하고 JSON만 파싱
       const jsonRegex = /\{[\s\S]*\}/;
       const match = aiResultText.match(jsonRegex);
       
-      if (!match) throw new Error("JSON 파싱 실패");
+      if (!match) throw new Error("분석 데이터 형식이 올바르지 않습니다.");
       return JSON.parse(match[0].trim());
     } catch (err) {
-      console.error("AI 분석 오류:", err);
+      console.error("AI 분석 실패:", err);
       return null;
     }
   };
@@ -189,6 +162,7 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
       }
       setIsUploading(false);
     } catch (err) {
+      alert("문서 읽기 오류: " + err.message);
       setIsUploading(false);
     }
   };
@@ -242,7 +216,7 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
               <div className="flex gap-0.5 items-center h-3">
                 {[1,2,3,4,5].map(i => <motion.div key={i} animate={{ height: [4, 12, 4] }} transition={{ duration: 0.5, repeat: Infinity, delay: i*0.1 }} className="w-0.5 bg-emerald-500" />)}
               </div>
-              Live Streaming (Moonshine)
+              Live Streaming (Web Speech)
             </span>
           </div>
           <div className="flex flex-col"><span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Audience</span><span className="text-xs font-black text-slate-700">{studentCount}명 청강 중</span></div>
