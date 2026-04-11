@@ -86,12 +86,11 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
           const insight = await response.json();
           setAiInsights(prev => [insight, ...prev].slice(0, 3));
           localStorage.setItem('vibe_bridge_live_insight', JSON.stringify(insight));
-          // 버퍼를 완전히 비우지 않고 일부 겹치게 유지하여 문맥 유지
           transcriptBuffer.current = currentTranscript.substring(currentTranscript.length - 200);
         }
       } catch (err) {}
     };
-    const interval = setInterval(requestInsight, 30000); // 30초 주기
+    const interval = setInterval(requestInsight, 30000); 
     return () => clearInterval(interval);
   }, [isStarted, wordClicks, misunderstandingCount, studentCount, analyzedSummary]);
 
@@ -109,31 +108,32 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
   };
 
   /**
-   * [똑똑한 Pro 모델 및 정식 API 주소 연결]
-   * gemini-1.5-pro 모델을 사용하여 강의의 논리 구조와 공식을 정밀 분석합니다.
+   * [API 404 수리 및 범용 학술 분석 모드]
+   * gemini-1.5-pro 모델과 v1beta 엔드포인트를 사용하여 모든 학문의 강의를 분석합니다.
    */
   const callAnalyzeAPI = async (textContent) => {
     const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 
-    // [안전 장치] 환경 변수 누락 시 배포 환경 디버깅 가이드 출력
     if (!API_KEY) {
       console.error("🚨 [Vibe Bridge] Gemini API 키를 인식할 수 없습니다.");
-      console.warn("💡 환경 변수가 Cloudflare의 Production 및 Preview 환경 모두에 등록되었는지 확인하세요.");
+      console.warn("💡 환경 변수 설정(VITE_GEMINI_API_KEY)을 확인해주세요.");
       alert("AI 설정을 불러올 수 없습니다. 환경 변수 등록 상태를 확인해주세요.");
       return null;
     }
 
     try {
-      // [v1 정식 엔드포인트 및 gemini-1.5-pro 모델 적용]
-      const endpoint = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro:generateContent?key=${API_KEY}`;
+      // [v1beta 엔드포인트 사용] 404 에러를 방지하고 Pro 모델의 성능을 안정적으로 끌어냅니다.
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${API_KEY}`;
       
-      // [범용 학술 분석 로직 적용] 전 학문 분야를 아우르는 구조적 분석 프롬프트
-      const prompt = `당신은 지능형 교육 중재 AI입니다. 제공된 강의 자료를 분석하여 학생용 대시보드에 표시할 구조적 요약본을 생성하세요. 
-      - 학문 분야(인문, 사회, 자연과학, 공학, 예술 등)에 관계없이 자료의 핵심 '개념 정의'와 '논리적 흐름'을 파악하세요.
-      - 특히 '원인과 결과', '주요 논거', '최종 결론'을 중심으로 구조화된 분석을 수행하세요.
-      - 해당 분야에서 가장 중요한 전문 용어 4개를 엄선하여 추출하세요.
+      // [범용 학술 분석 프롬프트] 인문, 사회, 자연과학, 예술, 공학 등 모든 분야 대응
+      const prompt = `당신은 전 학문 분야(인문, 사회, 자연과학, 예술, 공학 등)의 강의 내용을 분석하는 전문 학습 조력자 AI입니다. 
+      제공된 강의 자료를 정밀 분석하여 다음 가이드를 따라 요약본을 생성하세요.
+
+      - 자료의 '핵심 정의'와 개념들 사이의 '논리적 인과관계'를 명확히 파악하세요.
+      - 주장을 뒷받침하는 '주요 사례'나 구체적인 '데이터'가 있다면 이를 중점적으로 추출하세요.
+      - 특정 전공에 치우치지 않는 보편적인 학술 언어를 사용하세요.
       - 반드시 다음 JSON 형식으로만 응답하세요: 
-      { "topic": "강의 주제", "keyPoints": ["핵심1", "핵심2", "핵심3", "핵심4"], "summary": "핵심 정의와 논리적 결론이 포함된 구조적 3줄 요약" }
+      { "topic": "강의의 핵심 주제", "keyPoints": ["핵심용어1", "핵심용어2", "핵심용어3", "핵심용어4"], "summary": "논리적 인과관계와 주요 사례가 포함된 구조적 3줄 요약" }
       
       내용: ${textContent.substring(0, 10000)}`;
 
@@ -145,18 +145,18 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
         })
       });
 
-      if (!response.ok) throw new Error("API 호출 실패 (엔드포인트 또는 키 오류)");
+      if (!response.ok) throw new Error("API 엔드포인트 연결 실패 (404 오류 발생)");
 
       const data = await response.json();
       const aiResultText = data.candidates[0].content.parts[0].text;
       
-      // 마크다운 태그를 제거하고 순수 JSON만 추출하여 파싱
+      // AI 응답에서 마크다운 형식을 제거하고 순수 JSON만 추출
       const cleanJson = aiResultText.replace(/```json|```/g, "").trim();
       return JSON.parse(cleanJson);
       
     } catch (err) {
-      console.error("Gemini Pro Analysis Error:", err);
-      alert("고성능 AI 분석 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
+      console.error("Gemini Pro 범용 분석 오류:", err);
+      alert("AI 분석 중 오류가 발생했습니다. (404 또는 네트워크 문제)");
       return null;
     }
   };
@@ -178,7 +178,7 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
         return;
       }
       
-      // [데이터 실시간 동기화] vibe_lecture_data 키를 사용하여 학생 화면과 공유
+      // [데이터 실시간 동기화] vibe_lecture_data 키를 사용하여 학생 대시보드와 공유
       localStorage.setItem('vibe_lecture_data', JSON.stringify({
         topic: summary.topic,
         keyPoints: summary.keyPoints,
