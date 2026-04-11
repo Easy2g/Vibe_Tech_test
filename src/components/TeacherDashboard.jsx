@@ -17,58 +17,78 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
 
   const misunderstandingRatio = studentCount > 0 ? Math.round((misunderstandingCount / studentCount) * 100) : 0;
 
-  // [프로덕션] 실제 교수 음성용 STT 엔진
+  // [Moonshine 엔진 연동] 실제 교수 음성용 외부 STT 스트리밍 엔진
   useEffect(() => {
-    if (!isStarted || !('webkitSpeechRecognition' in window)) return;
-    const recognition = new window.webkitSpeechRecognition();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = 'ko-KR';
-    
-    recognition.onresult = (event) => {
-      let currentText = '';
-      for (let i = event.resultIndex; i < event.results.length; ++i) {
-        if (event.results[i].isFinal) {
-          const text = event.results[i][0].transcript;
-          currentText += text;
-          transcriptBuffer.current += " " + text;
+    if (!isStarted) return;
+
+    let socket = null;
+    let mediaRecorder = null;
+    let reconnectTimer = null;
+
+    const startMoonshineSession = async () => {
+      try {
+        // [설정] Moonshine 추론 서버 WebSocket 엔드포인트
+        socket = new WebSocket('ws://localhost:8000/stream');
+
+        socket.onopen = async () => {
+          console.log("🎤 Moonshine 엔진 가동 중 (WebSocket Connected)");
           
-          // [실시간 데이터 고속도로] 자막 즉시 방송
-          localStorage.setItem('vibe_live_transcript', JSON.stringify({ 
-            text, 
-            timestamp: Date.now(),
-            isFinal: true 
-          }));
-        }
+          // 마이크 입력 캡처 (오디오 전용)
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          mediaRecorder = new MediaRecorder(stream);
+
+          mediaRecorder.ondataavailable = (event) => {
+            if (event.data.size > 0 && socket.readyState === WebSocket.OPEN) {
+              // 음성 바이너리 데이터를 서버로 즉시 전송
+              socket.send(event.data);
+            }
+          };
+
+          // 1초(1000ms) 간격으로 음성 데이터를 잘라서 전송
+          mediaRecorder.start(1000);
+        };
+
+        socket.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            if (data.text && data.text.trim()) {
+              const text = data.text.trim();
+              transcriptBuffer.current += " " + text;
+              
+              // [실시간 데이터 고속도로] 자막 즉시 방송 및 학생 화면 동기화
+              localStorage.setItem('vibe_live_transcript', JSON.stringify({ 
+                text, 
+                timestamp: Date.now(),
+                isFinal: true 
+              }));
+              onLiveTextUpdate(text);
+            }
+          } catch (e) {
+            console.error("데이터 파싱 오류:", e);
+          }
+        };
+
+        socket.onclose = () => {
+          console.warn("⚠️ Moonshine 서버와 연결이 종료되었습니다. 재연결을 시도합니다...");
+          reconnectTimer = setTimeout(startMoonshineSession, 3000); // 3초 후 재연결
+        };
+
+        socket.onerror = (error) => {
+          console.error("Moonshine 엔진 에러:", error);
+        };
+
+      } catch (err) {
+        console.error("마이크 접근 또는 소켓 초기화 실패:", err);
+        alert("음성 인식 엔진을 시작할 수 없습니다. 마이크 권한을 확인하세요.");
       }
-      if (currentText.trim()) onLiveTextUpdate(currentText);
-    };
-    
-    recognition.onerror = (event) => {
-      // [침묵 에러 수리] 소리가 들리지 않는 현상은 에러가 아닌 대기 상태로 처리
-      if (event.error === 'no-speech') {
-        return; // 알림 없이 조용히 종료 (onend에서 자동 재시작됨)
-      }
-      console.error("STT Error:", event.error);
-      if (event.error === 'network') console.warn("네트워크 연결을 확인하세요.");
     };
 
-    recognition.onstart = () => {
-      console.log("🎤 음성 분석 시작됨");
-    };
+    startMoonshineSession();
 
-    recognition.onend = () => { 
-      if (isStarted) {
-        // [안전 장치] 이미 인식이 실행 중일 때 발생하는 에러 방지
-        try { recognition.start(); } catch(e) { /* 무시 */ }
-      } 
-    };
-    
-    recognition.start();
-    return () => { 
-      recognition.onend = null; 
-      recognition.onerror = null;
-      recognition.stop(); 
+    return () => {
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+      if (socket) socket.close();
+      if (reconnectTimer) clearTimeout(reconnectTimer);
     };
   }, [isStarted, onLiveTextUpdate]);
 
