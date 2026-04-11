@@ -19,9 +19,6 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
 
   const misunderstandingRatio = studentCount > 0 ? Math.round((misunderstandingCount / studentCount) * 100) : 0;
 
-  // [탭 간 실시간 통신] 자막 전용 브로드캐스트 채널
-  const subtitleChannel = useMemo(() => new BroadcastChannel('vibe_subtitle_channel'), []);
-
   // 자막 창 자동 스크롤 로직 (liveText가 변할 때마다 실행)
   useEffect(() => {
     if (scrollRef.current) {
@@ -32,12 +29,6 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
   // [무한 루프 실시간 자막 시스템]
   useEffect(() => {
     if (!isStarted || !('webkitSpeechRecognition' in window)) return;
-
-    // 다른 탭에서 방송된 자막이 있을 경우 동기화
-    subtitleChannel.onmessage = (event) => {
-      const { text, isFinal } = event.data;
-      if (text && isFinal) onLiveTextUpdate(text);
-    };
 
     const recognition = new window.webkitSpeechRecognition();
     recognition.continuous = true;
@@ -56,13 +47,6 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
           const text = event.results[i][0].transcript;
           currentText += text;
           transcriptBuffer.current += " " + text;
-          
-          subtitleChannel.postMessage({ text, isFinal: true, timestamp: Date.now() });
-          localStorage.setItem('vibe_live_transcript', JSON.stringify({ 
-            text, 
-            timestamp: Date.now(),
-            isFinal: true 
-          }));
         }
       }
       if (currentText.trim()) onLiveTextUpdate(currentText);
@@ -88,9 +72,8 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
     return () => { 
       recognition.onend = null; 
       recognition.stop(); 
-      subtitleChannel.close();
     };
-  }, [isStarted, onLiveTextUpdate, subtitleChannel]);
+  }, [isStarted, onLiveTextUpdate]);
 
   // [AI 실시간 맥락 최신화] 2분마다 실제 강의 내용을 분석하여 요약본 갱신
   useEffect(() => {
@@ -103,7 +86,7 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
       try {
         const newSummary = await callAnalyzeAPI(currentSpeech);
         if (newSummary) {
-          localStorage.setItem('vibe_lecture_data', JSON.stringify(newSummary));
+          // Firebase 연동을 위해 부모로 전달 (향후 구현)
           setAnalyzedSummary(newSummary);
         }
       } catch (err) {}
@@ -163,7 +146,6 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
       setAnalysisProgress(60);
       const summary = await callAnalyzeAPI(textContent);
       if (summary) {
-        localStorage.setItem('vibe_lecture_data', JSON.stringify(summary));
         setAnalyzedSummary(summary);
         setAnalysisProgress(100);
         setIsAnalyzed(true);

@@ -7,60 +7,17 @@ import { WordExplanationModal } from './SharedUI';
  */
 export default function StudentView({ onWordClick, lastActivity, onTempoChange, lectureTempo, onMisunderstand, liveText, lectureContext }) {
   const [selectedWord, setSelectedWord] = useState(null);
-  const [showFeedback, setShowFeedback] = useState(false);
-  const [startTime] = useState(Date.now());
   const scrollRef = useRef(null);
 
-  // 실시간 동기화 상태
-  const [localSummary, setLocalSummary] = useState(null); // 자료 요약본
-  const [liveInsight, setLiveInsight] = useState(null); // AI 실시간 조언
-
-  useEffect(() => {
-    // [탭 간 통신] 자막 전용 브로드캐스트 채널 구독
-    const subtitleChannel = new BroadcastChannel('vibe_subtitle_channel');
-
-    const syncAllData = () => {
-      const savedSummary = localStorage.getItem('vibe_lecture_data');
-      if (savedSummary) {
-        try { setLocalSummary(JSON.parse(savedSummary)); } catch (e) {}
-      }
-      const savedInsight = localStorage.getItem('vibe_bridge_live_insight');
-      if (savedInsight) {
-        try { setLiveInsight(JSON.parse(savedInsight)); } catch (e) {}
-      }
-    };
-
-    // 실시간 자막 수신 리스너 (교수 탭에서 보낸 데이터)
-    subtitleChannel.onmessage = (event) => {
-      const { text, isFinal } = event.data;
-      if (text && isFinal) {
-        // App.jsx의 부모 상태를 거치지 않고 직접 화면에 반영되는 자막 동기화
-        // 실제로는 부모 컴포넌트(App.jsx)에서 통합 관리하는 것이 좋으나, 
-        // 탭 간 초저지연 경험을 위해 수신 로직 보강
-      }
-    };
-
-    syncAllData();
-
-    const handleStorage = (e) => {
-      if (e.key === 'vibe_lecture_data' || e.key === 'vibe_bridge_live_insight') {
-        syncAllData();
-      }
-    };
-
-    window.addEventListener('storage', handleStorage);
-    return () => {
-      window.removeEventListener('storage', handleStorage);
-      subtitleChannel.close();
-    };
-  }, []);
+  // 실시간 동기화 상태 - 이제 부모(App.jsx)에서 props로 전달받음
+  const liveInsight = null; // AI 실시간 조언 (향후 Firebase 연동 예정)
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [liveText]);
 
   // [방어 코드] 강의 정보가 아예 없으면 로딩 화면 표시
-  if (!lectureContext && !localSummary) {
+  if (!lectureContext) {
     return (
       <div className="h-full flex flex-col items-center justify-center bg-white rounded-[3rem] border border-slate-100 shadow-sm p-12 text-center">
         <div className="w-20 h-20 bg-indigo-50 rounded-full flex items-center justify-center mb-6 animate-bounce">
@@ -129,7 +86,7 @@ export default function StudentView({ onWordClick, lastActivity, onTempoChange, 
           <div className="space-y-1">
             <p className="text-[10px] font-bold text-slate-400 uppercase">Today's Topic</p>
             <p className="text-lg font-black text-slate-800 leading-tight">
-              {(localSummary || lectureContext)?.topic || "데이터를 수신 중입니다..."}
+              {lectureContext?.topic || "데이터를 수신 중입니다..."}
             </p>
           </div>
         </div>
@@ -138,8 +95,8 @@ export default function StudentView({ onWordClick, lastActivity, onTempoChange, 
           <div className="space-y-3">
             <p className="text-[10px] font-bold text-slate-400 uppercase">Core Keywords</p>
             <div className="flex flex-col gap-2">
-              {(localSummary || lectureContext)?.keyPoints?.length > 0 ? (
-                (localSummary || lectureContext).keyPoints.map((kp, i) => (
+              {lectureContext?.keyPoints?.length > 0 ? (
+                lectureContext.keyPoints.map((kp, i) => (
                   <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} key={i} className="p-3 bg-white border border-slate-100 rounded-xl text-[11px] font-bold text-slate-600 shadow-sm">
                     # {kp}
                   </motion.div>
@@ -151,9 +108,9 @@ export default function StudentView({ onWordClick, lastActivity, onTempoChange, 
           </div>
           
           {/* 요약본 표시 */}
-          {(localSummary || lectureContext)?.summary && (
+          {lectureContext?.summary && (
             <div className="p-4 bg-indigo-50 rounded-2xl text-indigo-800 text-[11px] leading-relaxed font-medium">
-              {(localSummary || lectureContext).summary}
+              {lectureContext.summary}
             </div>
           )}
 
@@ -180,7 +137,7 @@ export default function StudentView({ onWordClick, lastActivity, onTempoChange, 
       </div>
 
       <AnimatePresence>
-        {selectedWord && <WordExplanationModal word={selectedWord} lectureContext={{ topic: (localSummary || lectureContext)?.topic }} onClose={() => setSelectedWord(null)} />}
+        {selectedWord && <WordExplanationModal word={selectedWord} lectureContext={{ topic: lectureContext?.topic }} onClose={() => setSelectedWord(null)} />}
       </AnimatePresence>
     </div>
   );
