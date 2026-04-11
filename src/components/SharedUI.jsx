@@ -144,17 +144,33 @@ function StudentEntryModal({ validCode, onClose, onEntry }) {
 }
 
 export function WordExplanationModal({ word, onClose, lectureContext }) {
-  const explanations = {
-    '인공지능': '인간의 지능적 행위를 컴퓨터 프로그램으로 모방하는 광범위한 기술 체계입니다. 추론, 학습, 인식을 포함하며 현대 지능형 시스템의 근간이 됩니다.',
-    '머신러닝': '명시적인 프로그래밍 없이 데이터의 통계적 구조를 학습하여 성능을 최적화하는 알고리즘 연구 분야입니다. 손실 함수 최소화를 목표로 가중치를 갱신합니다.',
-    '데이터': '알고리즘의 입력값으로 사용되는 정형/비정형 정보의 집합입니다. 피처 엔지니어링을 통해 모델이 학습 가능한 형태로 가공된 원천 재료를 의미합니다.',
-    '알고리즘': '주어진 입력으로부터 원하는 출력을 도출하기 위해 정의된 유한한 절차의 집합입니다. 시간 복잡도와 공간 복잡도 분석을 통한 효율성 검증이 필수적입니다.',
-    '딥러닝': '인간 뇌의 생물학적 신경망 구조를 모방한 다층 퍼셉트론(MLP) 기반의 심화 학습 기술입니다. 역전파 알고리즘을 통해 수백만 개의 파라미터를 최적화합니다.'
-  };
+  const [explanation, setExplanation] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
 
-  const contextInjectedText = lectureContext?.topic 
-    ? `[${lectureContext.topic}] 맥락 내 전문 해석:\n${explanations[word] || '현재 맥락에 맞는 상세 설명을 로드 중입니다.'}`
-    : explanations[word] || '사전적 의미를 불러오고 있습니다.';
+  useEffect(() => {
+    const fetchExplanation = async () => {
+      setIsLoading(true);
+      try {
+        const response = await fetch('/explain', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ word, topic: lectureContext?.topic })
+        });
+        if (response.ok) {
+          const data = await response.json();
+          setExplanation(data.explanation);
+        } else {
+          throw new Error('설명을 가져오지 못했습니다.');
+        }
+      } catch (err) {
+        setExplanation(`${word}에 대한 상세 정보를 실시간으로 분석할 수 없습니다. 잠시 후 다시 시도해주세요.`);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    if (word) fetchExplanation();
+  }, [word, lectureContext]);
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/20 backdrop-blur-sm">
@@ -165,16 +181,34 @@ export function WordExplanationModal({ word, onClose, lectureContext }) {
         className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-100"
       >
         <div className="px-6 py-5 border-b border-slate-50 flex justify-between items-center bg-indigo-50/30">
-          <h4 className="font-bold text-lg text-slate-800">지능형 사전: {word}</h4>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl">✕</button>
+          <div className="flex flex-col">
+            <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-0.5">Contextual Dictionary</span>
+            <h4 className="font-bold text-lg text-slate-800">{word}</h4>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl transition-colors">✕</button>
         </div>
-        <div className="p-8">
-          <p className="text-slate-700 font-semibold leading-relaxed text-sm whitespace-pre-line">
-            {contextInjectedText}
-          </p>
+        <div className="p-8 min-h-[160px] flex flex-col justify-center">
+          {isLoading ? (
+            <div className="space-y-3">
+              <div className="h-4 bg-slate-100 rounded-full animate-pulse w-full"></div>
+              <div className="h-4 bg-slate-100 rounded-full animate-pulse w-5/6"></div>
+              <div className="h-4 bg-slate-100 rounded-full animate-pulse w-4/6"></div>
+            </div>
+          ) : (
+            <motion.p 
+              initial={{ opacity: 0 }} 
+              animate={{ opacity: 1 }}
+              className="text-slate-700 font-semibold leading-relaxed text-sm whitespace-pre-line"
+            >
+              {explanation}
+            </motion.p>
+          )}
         </div>
         <div className="bg-indigo-50/50 py-3 text-center border-t border-indigo-100">
-          <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest italic">AI Contextual Analysis</span>
+          <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest italic flex items-center justify-center gap-2">
+            {isLoading ? <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-ping"></span> : "✨"} 
+            AI Contextual Analysis Complete
+          </span>
         </div>
       </motion.div>
     </div>

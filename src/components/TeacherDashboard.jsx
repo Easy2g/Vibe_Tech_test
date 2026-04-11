@@ -34,42 +34,66 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
           transcriptBuffer.current += " " + text;
           
           // [실시간 데이터 고속도로] 자막 즉시 방송
-          localStorage.setItem('vibe_live_transcript', JSON.stringify({ text, timestamp: Date.now() }));
+          localStorage.setItem('vibe_live_transcript', JSON.stringify({ 
+            text, 
+            timestamp: Date.now(),
+            isFinal: true 
+          }));
         }
       }
       if (currentText.trim()) onLiveTextUpdate(currentText);
     };
     
-    recognition.onend = () => { if (isStarted) recognition.start(); };
+    recognition.onerror = (event) => {
+      console.error("STT Error:", event.error);
+      if (event.error === 'network') alert("네트워크 연결을 확인하세요.");
+    };
+
+    recognition.onend = () => { 
+      if (isStarted) {
+        try { recognition.start(); } catch(e) {}
+      } 
+    };
+    
     recognition.start();
-    return () => { recognition.onend = null; recognition.stop(); };
+    return () => { 
+      recognition.onend = null; 
+      recognition.onerror = null;
+      recognition.stop(); 
+    };
   }, [isStarted, onLiveTextUpdate]);
 
   // 실시간 AI 조언 생성
   useEffect(() => {
     if (!isStarted) return;
     const requestInsight = async () => {
-      if (!transcriptBuffer.current.trim() && misunderstandingCount === 0) return;
+      const currentTranscript = transcriptBuffer.current.trim();
+      if (!currentTranscript && misunderstandingCount === 0) return;
+      
       try {
         const response = await fetch("/insight", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            transcript: transcriptBuffer.current.substring(transcriptBuffer.current.length - 1000),
-            wordClicks, misunderstandingCount, studentCount
+            transcript: currentTranscript.substring(currentTranscript.length - 1500),
+            wordClicks, 
+            misunderstandingCount, 
+            studentCount,
+            topic: analyzedSummary?.topic
           })
         });
         if (response.ok) {
           const insight = await response.json();
           setAiInsights(prev => [insight, ...prev].slice(0, 3));
           localStorage.setItem('vibe_bridge_live_insight', JSON.stringify(insight));
-          transcriptBuffer.current = "";
+          // 버퍼를 완전히 비우지 않고 일부 겹치게 유지하여 문맥 유지
+          transcriptBuffer.current = currentTranscript.substring(currentTranscript.length - 200);
         }
       } catch (err) {}
     };
-    const interval = setInterval(requestInsight, 25000);
+    const interval = setInterval(requestInsight, 30000); // 30초 주기
     return () => clearInterval(interval);
-  }, [isStarted, wordClicks, misunderstandingCount, studentCount]);
+  }, [isStarted, wordClicks, misunderstandingCount, studentCount, analyzedSummary]);
 
   const extractTextFromPDF = async (arrayBuffer) => {
     const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer, useSystemFonts: true });

@@ -68,16 +68,30 @@ export default function StudentView({ onWordClick, lastActivity, onTempoChange, 
             </h3>
           </div>
           <div ref={scrollRef} className="flex-1 overflow-y-auto pr-2 scroll-smooth relative z-10">
-            <p className="text-xl md:text-2xl text-slate-700 font-bold leading-[2.2] break-keep">
-              {liveText || "강의가 시작되면 교수님의 음성이 실시간으로 자막 처리됩니다."}
-              <span className="inline-flex gap-2 ml-4">
-                {['인공지능', '머신러닝', '데이터'].map(word => (
-                  <button key={word} onClick={() => { onWordClick(word); setSelectedWord(word); }} className="px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded-lg text-sm font-bold border border-indigo-100 shadow-sm hover:bg-indigo-600 hover:text-white transition-all active:scale-95">
+            <div className="flex flex-wrap gap-x-2 gap-y-3 items-baseline py-4">
+              {liveText ? (
+                liveText.split(' ').map((word, idx) => (
+                  <motion.button
+                    key={idx}
+                    initial={{ opacity: 0, y: 5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    whileHover={{ scale: 1.1, color: '#4f46e5' }}
+                    onClick={() => {
+                      const cleanWord = word.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"");
+                      onWordClick(cleanWord);
+                      setSelectedWord(cleanWord);
+                    }}
+                    className="text-xl md:text-2xl text-slate-700 font-bold leading-none break-keep transition-colors"
+                  >
                     {word}
-                  </button>
-                ))}
-              </span>
-            </p>
+                  </motion.button>
+                ))
+              ) : (
+                <p className="text-xl text-slate-400 font-medium italic">
+                  강의가 시작되면 교수님의 음성이 실시간으로 자막 처리됩니다.
+                </p>
+              )}
+            </div>
           </div>
         </div>
 
