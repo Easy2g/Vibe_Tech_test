@@ -167,7 +167,11 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
 
   const handleStartLecture = () => {
     if (!analyzedSummary) return;
-    onStart({ title: analyzedSummary.topic, summary: analyzedSummary });
+    onStart({ 
+      topic: analyzedSummary.topic, 
+      keyPoints: analyzedSummary.keyPoints, 
+      summary: analyzedSummary.summary 
+    });
   };
 
   if (!isStarted) {
