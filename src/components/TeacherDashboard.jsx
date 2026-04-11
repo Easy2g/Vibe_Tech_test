@@ -6,41 +6,93 @@ import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
-export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, onStart, misunderstandingCount, onLiveTextUpdate, studentCount, liveText }) {
+export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, onStart, misunderstandingCount, onLiveTextUpdate, studentCount, students, liveText, lectureData }) {
   const [isUploading, setIsUploading] = useState(false);
   const [analysisProgress, setAnalysisProgress] = useState(0);
   const [isAnalyzed, setIsAnalyzed] = useState(false);
   const [analyzedSummary, setAnalyzedSummary] = useState(null);
   const [sttStatus, setSttStatus] = useState('idle'); // 마이크 상태 시각화용
   
-  const [aiInsights, setAiInsights] = useState([]);
   const transcriptBuffer = useRef(""); 
   const scrollRef = useRef(null); // 자막 자동 스크롤용
   const recognitionRef = useRef(null);
   const isDestroyedRef = useRef(false);
 
-  const misunderstandingRatio = studentCount > 0 ? Math.round((misunderstandingCount / studentCount) * 100) : 0;
+  // [기획 반영] 학생 이해도 위험도 계산 로직
+  const totalStudents = studentCount || 1;
+  const totalWordClicks = Object.keys(wordClicks || {}).length;
+  const misunderstandingRate = Math.min(Math.round((misunderstandingCount / totalStudents) * 100), 100);
+
+  const getRiskLevel = () => {
+    if (misunderstandingRate >= 50 || lectureTempo?.value === "빠름") {
+      return { level: "위험", color: "text-rose-400", bg: "bg-rose-500", emoji: "🚨" };
+    } else if (misunderstandingRate >= 25 || lectureTempo?.value === "느림") {
+      return { level: "주의", color: "text-amber-400", bg: "bg-amber-500", emoji: "⚠️" };
+    } else {
+      return { level: "양호", color: "text-emerald-400", bg: "bg-emerald-500", emoji: "✅" };
+    }
+  };
+  const risk = getRiskLevel();
 
   // [수정] wordClicks가 push() 객체 모음일 경우를 대비한 집계 로직
   const sortedKeywords = useMemo(() => {
     const keywordMap = {};
     Object.values(wordClicks || {}).forEach(item => {
-      // item이 숫자면 (기존 방식) 그대로 사용, 객체면 word 속성 사용
       const word = typeof item === 'object' ? item.word : null; 
-      // 만약 App.jsx에서 wordClicks를 { '단어': count } 형식으로 보낸다면 keys를 돌아야 함
       if (!word) return;
       keywordMap[word] = (keywordMap[word] || 0) + 1;
     });
-
-    // 만약 wordClicks가 { '단어': count } 형식으로 이미 집계되어 넘어온다면:
-    const finalMap = Object.keys(wordClicks).length > 0 && typeof Object.values(wordClicks)[0] === 'number'
-      ? wordClicks
-      : keywordMap;
-
-    return Object.entries(finalMap)
-      .filter(([_, count]) => count > 0)
-      .sort((a, b) => b[1] - a[1]);
+    return Object.entries(keywordMap).sort((a, b) => b[1] - a[1]);
   }, [wordClicks]);
+
+  // [AI Smart Insight 고도화 로직]
+  const lastInsightTimeRef = useRef(0);
+  const [aiInsight, setAiInsight] = useState("");
+  const [isInsightLoading, setIsInsightLoading] = useState(false);
+
+  useEffect(() => {
+    if (!isStarted) return;
+
+    const clickedWords = [...new Set(Object.values(wordClicks || {}).map((v) => v.word).filter(Boolean))];
+    const shouldTrigger = (misunderstandingCount >= 2 || totalWordClicks >= 3 || lectureTempo?.value === "빠름") && 
+                        (Date.now() - lastInsightTimeRef.current > 30000);
+
+    if (!shouldTrigger) return;
+    lastInsightTimeRef.current = Date.now();
+
+    const fetchInsight = async () => {
+      setIsInsightLoading(true);
+      const prompt = `당신은 실시간 강의를 보조하는 교육 AI 중재자입니다. 아래 데이터는 지금 이 순간 강의실에서 수집된 학생 반응입니다.
+[실시간 강의 데이터]
+- 이해 어려움 표시 학생 수: ${misunderstandingCount}명 / 전체 ${totalStudents}명
+- 학생들이 모르는 단어로 클릭한 키워드: ${clickedWords.length > 0 ? clickedWords.join(", ") : "없음"}
+- 강의 속도에 대한 학생 반응: ${lectureTempo?.value || "응답 없음"}
+- 현재 강의 주제: ${lectureData?.topic || "정보 없음"}
+
+[지시사항]
+위 데이터를 분석하여 교수자가 지금 당장 취해야 할 수업 전략을 아래 형식으로 한국어 2~3문장으로 제안하세요.
+- 현재 상황 진단 1문장
+- 즉각적인 행동 제안 1~2문장 (예: "~개념을 다시 설명해 주세요", "잠시 질문 시간을 가지세요")
+절대 일반적인 조언을 하지 말고, 위 데이터에 근거한 구체적 제안만 하세요.`;
+
+      try {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${import.meta.env.VITE_GEMINI_API_KEY}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+        });
+        const data = await response.json();
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "분석 결과를 가져올 수 없습니다.";
+        setAiInsight(text);
+      } catch (err) {
+        setAiInsight("AI 분석 중 오류가 발생했습니다.");
+      } finally {
+        setIsInsightLoading(false);
+      }
+    };
+
+    fetchInsight();
+  }, [misunderstandingCount, wordClicks, lectureTempo, isStarted, totalStudents, lectureData]);
 
   // 자막 창 자동 스크롤 로직 (liveText가 변할 때마다 실행)
   useEffect(() => {
@@ -227,64 +279,6 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
     onStart({ topic: analyzedSummary.topic, keyPoints: analyzedSummary.keyPoints, summary: analyzedSummary.summary });
   };
 
-  // [AI Smart Insight 생성 함수]
-  const callInsightAPI = async (transcript, keywords, ratio) => {
-    const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
-    if (!API_KEY) return null;
-
-    const prompt = `당신은 베테랑 교수자의 수업을 돕는 실시간 교육 분석가입니다.
-현재 수업 상황:
-1. 최근 강의 발언: "${transcript.slice(-1500)}"
-2. 학생 집중 키워드: ${keywords.join(', ') || '없음'}
-3. 실시간 미이해 비율: ${ratio}%
-
-위 데이터를 바탕으로 교수에게 지금 당장 필요한 '수업 전략' 1가지를 제안하세요.
-반드시 다음 JSON 형식으로만 응답하세요:
-{ "type": "info" 또는 "danger", "title": "한 줄 제목", "desc": "상세 제안(2문장 이내)" }
-* 미이해 비율이 30%를 넘거나 특정 단어 클릭이 많으면 type을 "danger"로 설정하세요.
-* 인사말 없이 JSON 데이터만 출력하세요.`;
-
-    try {
-      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${API_KEY}`;
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-      });
-
-      const data = await response.json();
-      const aiResultText = data.candidates[0].content.parts[0].text;
-      const jsonRegex = /\{[\s\S]*\}/;
-      const match = aiResultText.match(jsonRegex);
-      if (!match) return null;
-      return JSON.parse(match[0].trim());
-    } catch (err) {
-      return null;
-    }
-  };
-
-  // [AI 실시간 인사이트 갱신 시스템] 1분마다 분석
-  useEffect(() => {
-    if (!isStarted) return;
-
-    const refreshInsight = async () => {
-      if (transcriptBuffer.current.length < 100) return;
-
-      const insight = await callInsightAPI(
-        transcriptBuffer.current, 
-        sortedKeywords.slice(0, 3).map(k => k[0]), 
-        misunderstandingRatio
-      );
-
-      if (insight) {
-        setAiInsights(prev => [insight, ...prev].slice(0, 3)); // 최근 3개 유지
-      }
-    };
-
-    const interval = setInterval(refreshInsight, 60000);
-    return () => clearInterval(interval);
-  }, [isStarted, sortedKeywords, misunderstandingRatio]);
-
   if (!isStarted) {
     return (
       <div className="h-full flex flex-col items-center justify-center bg-white rounded-3xl border-2 border-dashed border-slate-200 p-12 text-center overflow-hidden shadow-sm">
@@ -382,7 +376,7 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
           </div>
         </section>
 
-        {/* 가운데: 실시간 자막 피드 (신설) */}
+        {/* 가운데: 실시간 자막 피드 */}
         <section className="flex-[4] bg-white rounded-3xl border border-slate-100 p-6 flex flex-col min-h-0 shadow-sm relative overflow-hidden">
           <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-50 rounded-full blur-3xl opacity-50 -mr-8 -mt-8"></div>
           <h3 className="text-[10px] font-black text-indigo-500 uppercase mb-4 tracking-widest relative z-10 flex items-center gap-2">
@@ -398,35 +392,102 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
 
         {/* 오른쪽: 이해도 및 AI 인사이트 */}
         <div className="flex-[3.5] flex flex-col gap-4 min-h-0">
-          <section className="bg-white rounded-3xl border border-slate-100 p-6 flex flex-col shrink-0 shadow-sm text-center">
-            <h3 className="text-[10px] font-black text-slate-400 uppercase mb-4 tracking-widest">학생 이해도</h3>
-            <motion.div 
-              animate={misunderstandingRatio > 30 ? { scale: [1, 1.1, 1], color: '#e11d48' } : { scale: 1, color: '#1e293b' }}
-              transition={{ repeat: misunderstandingRatio > 30 ? Infinity : 0, duration: 2 }}
-              className="text-4xl font-black mb-1"
-            >
-              {misunderstandingRatio}%
-            </motion.div>
-            <div className="text-[9px] text-rose-500 font-bold uppercase tracking-tighter">지원 요청: {misunderstandingCount}건</div>
+          {/* [전면 개편] 학생 이해도 패널 */}
+          <section className="bg-slate-900 rounded-3xl border border-white/5 p-6 flex flex-col shrink-0 shadow-xl overflow-hidden relative">
+            <div className="absolute top-0 right-0 w-20 h-20 bg-indigo-500/5 rounded-full blur-2xl -mr-10 -mt-10"></div>
+            
+            <div className="flex items-center justify-between mb-4 relative z-10">
+              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Student Understanding</h3>
+              <span className={`text-[10px] px-2.5 py-1 rounded-full ${risk.bg}/20 ${risk.color} font-black border border-white/5 flex items-center gap-1.5`}>
+                {risk.emoji} {risk.level}
+              </span>
+            </div>
+
+            <div className="mb-6 relative z-10">
+              <div className="flex justify-between items-end mb-2">
+                <span className="text-[10px] font-bold text-slate-500 uppercase">Current Comprehension</span>
+                <span className="text-2xl font-black text-white">{100 - misunderstandingRate}%</span>
+              </div>
+              <div className="w-full bg-white/5 rounded-full h-3 overflow-hidden p-0.5 border border-white/5">
+                <motion.div
+                  initial={{ width: 0 }}
+                  animate={{ width: `${100 - misunderstandingRate}%` }}
+                  className="h-full rounded-full"
+                  style={{
+                    background: misunderstandingRate >= 50
+                      ? "linear-gradient(90deg, #f43f5e, #fb923c)"
+                      : misunderstandingRate >= 25
+                      ? "linear-gradient(90deg, #fbbf24, #a3e635)"
+                      : "linear-gradient(90deg, #10b981, #06b6d4)"
+                  }}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 relative z-10">
+              <div className="bg-white/5 rounded-2xl p-3 border border-white/5 text-center">
+                <p className="text-rose-400 font-black text-lg leading-none mb-1">{misunderstandingCount}</p>
+                <p className="text-slate-500 text-[9px] font-bold uppercase tracking-tighter">Confusion</p>
+              </div>
+              <div className="bg-white/5 rounded-2xl p-3 border border-white/5 text-center">
+                <p className={`font-black text-lg leading-none mb-1 ${
+                  lectureTempo?.value === "빠름" ? "text-rose-400" :
+                  lectureTempo?.value === "느림" ? "text-amber-400" :
+                  "text-emerald-400"
+                }`}>
+                  {lectureTempo?.value || "적당"}
+                </p>
+                <p className="text-slate-500 text-[9px] font-bold uppercase tracking-tighter">Tempo</p>
+              </div>
+              <div className="bg-white/5 rounded-2xl p-3 border border-white/5 text-center">
+                <p className="text-indigo-400 font-black text-lg leading-none mb-1">{totalWordClicks}</p>
+                <p className="text-slate-500 text-[9px] font-bold uppercase tracking-tighter">Questions</p>
+              </div>
+            </div>
           </section>
 
-          <section className="flex-1 bg-slate-900 rounded-3xl p-6 flex flex-col min-h-0 text-white shadow-2xl relative overflow-hidden">
+          {/* [전면 개편] AI Smart Insight 패널 */}
+          <section className="flex-1 bg-slate-900 rounded-3xl p-6 flex flex-col min-h-0 text-white shadow-2xl relative overflow-hidden border border-white/5">
             <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full blur-3xl -mr-10 -mt-10"></div>
-            <h3 className="text-[10px] font-black text-indigo-400 uppercase mb-6 tracking-[0.2em] relative z-10">AI Smart Insight</h3>
-            <div className="flex-1 overflow-y-auto space-y-4 relative z-10 pr-1">
-              <AnimatePresence mode="popLayout">
-                {aiInsights.length === 0 ? (
+            
+            <div className="flex items-center gap-2 mb-6 relative z-10">
+              <span className="text-lg">🤖</span>
+              <h3 className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.2em]">AI Smart Insight</h3>
+              {isInsightLoading && (
+                <span className="ml-auto text-[9px] text-indigo-300/40 font-black animate-pulse uppercase">Analyzing...</span>
+              )}
+            </div>
+
+            <div className="flex-1 overflow-y-auto relative z-10 pr-1">
+              <AnimatePresence mode="wait">
+                {isInsightLoading ? (
+                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-3">
+                    <div className="h-3 bg-white/5 rounded-full animate-pulse w-full" />
+                    <div className="h-3 bg-white/5 rounded-full animate-pulse w-4/5" />
+                    <div className="h-3 bg-white/5 rounded-full animate-pulse w-3/5" />
+                  </motion.div>
+                ) : aiInsight ? (
+                  <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="bg-white/5 rounded-2xl p-4 border border-white/10 shadow-inner">
+                    <p className="text-[11px] font-bold leading-relaxed text-slate-200 whitespace-pre-line">
+                      {aiInsight}
+                    </p>
+                    <div className="mt-4 pt-3 border-t border-white/5 flex justify-between items-center">
+                      <span className="text-[8px] font-black text-indigo-400 uppercase tracking-widest">Real-time Strategy</span>
+                      <span className="text-[8px] font-bold text-slate-500 uppercase">
+                        {new Date(lastInsightTimeRef.current).toLocaleTimeString("ko-KR", { hour12: false })} Update
+                      </span>
+                    </div>
+                  </motion.div>
+                ) : (
                   <div className="h-full flex flex-col items-center justify-center opacity-30 text-center py-10">
                     <span className="text-3xl mb-4">🧠</span>
-                    <p className="text-[10px] font-medium tracking-tight uppercase">교수님 발언과 학생 반응을 토대로<br/>AI 가이드를 실시간 생성합니다.</p>
+                    <p className="text-[10px] font-medium tracking-tight uppercase leading-relaxed">
+                      학생 반응 데이터가 임계치를 넘으면<br />AI가 실시간 수업 전략을 제안합니다
+                    </p>
+                    <p className="text-[8px] text-slate-500 font-bold mt-3 uppercase tracking-tighter">
+                      (이해 어려움 2명↑ · 질문 3회↑ · 속도 빠름 시 활성화)
+                    </p>
                   </div>
-                ) : (
-                  aiInsights.map((ins, i) => (
-                    <motion.div key={i} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className={`p-4 rounded-2xl border-l-4 bg-white/5 ${ins.type === 'danger' ? 'border-rose-500' : 'border-indigo-500'}`}>
-                      <h4 className={`text-[9px] font-black mb-1 uppercase tracking-widest ${ins.type === 'danger' ? 'text-rose-300' : 'text-indigo-300'}`}>{ins.title}</h4>
-                      <p className="text-[10px] leading-relaxed text-slate-300 font-medium">{ins.desc}</p>
-                    </motion.div>
-                  ))
                 )}
               </AnimatePresence>
             </div>

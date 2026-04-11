@@ -11,14 +11,13 @@ export default function App() {
   const [lectureCode, setLectureCode] = useState('');
   const [teacherName, setTeacherName] = useState('');
   const [studentCount, setStudentCount] = useState(0);
+  const [students, setStudents] = useState({}); // 학생 객체 상태 추가
   const [isLectureStarted, setIsLectureStarted] = useState(false);
   const [lectureContext, setLectureContext] = useState(null);
   const [liveText, setLiveText] = useState('');
   const [misunderstandingCount, setMisunderstandingCount] = useState(0);
-  const [wordClicks, setWordClicks] = useState({
-    '인공지능': 0, '머신러닝': 0, '데이터': 0, '알고리즘': 0, '딥러닝': 0
-  });
-  const [lectureTempo, setLectureTempo] = useState(50);
+  const [wordClicks, setWordClicks] = useState({});
+  const [lectureTempo, setLectureTempo] = useState({ value: '적당' });
   const [lastActivity, setLastActivity] = useState(Date.now());
 
   useEffect(() => {
@@ -44,17 +43,18 @@ export default function App() {
       if (snap.exists() && role === 'teacher') {
         const data = snap.val();
         setMisunderstandingCount(data.misunderstandingCount ?? 0);
-        // wordClicks가 push() 구조(객체)일 수도 있으므로 그대로 전달
         setWordClicks(data.wordClicks ?? {});
         setLectureTempo(data.lectureTempo ?? { value: '적당' });
       }
     }));
-    // 학생도 lectureTempo 상태를 알아야 하이라이트 가능하므로 추가 리스너 (필요시)
+    // 학생도 lectureTempo 상태를 알아야 하이라이트 가능하므로 추가 리스너
     unsubs.push(onValue(ref(db, `${sessionPath}/feedback/lectureTempo`), (snap) => {
       if (snap.exists()) setLectureTempo(snap.val());
     }));
     unsubs.push(onValue(ref(db, `${sessionPath}/students`), (snap) => {
-      setStudentCount(snap.exists() ? Object.keys(snap.val()).length : 0);
+      const data = snap.val() || {};
+      setStudents(data);
+      setStudentCount(Object.keys(data).length);
     }));
     return () => unsubs.forEach(unsub => unsub());
   }, [lectureCode, role]);
@@ -99,10 +99,11 @@ export default function App() {
   };
 
   const handleWordClick = (word) => {
-    const newClicks = { ...wordClicks, [word]: (wordClicks[word] || 0) + 1 };
-    setWordClicks(newClicks);
+    // wordClicks가 push() 구조로 저장되도록 수정 (요청 사양 반영)
+    const clickRef = ref(db, `sessions/${lectureCode}/feedback/wordClicks`);
+    push(clickRef, { word, timestamp: Date.now() });
+    
     setLastActivity(Date.now());
-    broadcastFeedback({ wordClicks: newClicks });
   };
 
   const handleMisunderstanding = () => {
@@ -152,7 +153,20 @@ export default function App() {
         <AnimatePresence mode="wait">
           <motion.div key={role} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="h-full">
             {role === 'student' && <StudentView onWordClick={handleWordClick} lastActivity={lastActivity} onTempoChange={v => { setLectureTempo(v); broadcastFeedback({ lectureTempo: v }); }} lectureTempo={lectureTempo} onMisunderstand={handleMisunderstanding} liveText={liveText} lectureContext={lectureContext} />}
-            {role === 'teacher' && <TeacherDashboard wordClicks={wordClicks} lectureTempo={lectureTempo} isStarted={isLectureStarted} onStart={handleStartLecture} misunderstandingCount={misunderstandingCount} onLiveTextUpdate={handleLiveTextUpdate} studentCount={studentCount} liveText={liveText} />}
+            {role === 'teacher' && (
+              <TeacherDashboard 
+                wordClicks={wordClicks} 
+                lectureTempo={lectureTempo} 
+                isStarted={isLectureStarted} 
+                onStart={handleStartLecture} 
+                misunderstandingCount={misunderstandingCount} 
+                onLiveTextUpdate={handleLiveTextUpdate} 
+                studentCount={studentCount} 
+                students={students}
+                liveText={liveText} 
+                lectureData={lectureContext}
+              />
+            )}
           </motion.div>
         </AnimatePresence>
       </main>
