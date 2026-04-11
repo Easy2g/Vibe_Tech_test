@@ -109,28 +109,34 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
   };
 
   /**
-   * [진짜 인공지능 연결] Vite 환경 변수를 통한 Gemini API 직접 호출
+   * [똑똑한 Pro 모델 및 정식 API 주소 연결]
+   * gemini-1.5-pro 모델을 사용하여 강의의 논리 구조와 공식을 정밀 분석합니다.
    */
   const callAnalyzeAPI = async (textContent) => {
     const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 
-    // [안전 장치] API 키가 정의되지 않았을 경우 디버깅 가이드 출력
+    // [안전 장치] 환경 변수 누락 시 배포 환경 디버깅 가이드 출력
     if (!API_KEY) {
-      console.error("🚨 [Vibe Bridge] API 키 인식 실패!");
-      console.warn("💡 디버깅 팁: .env 파일의 변수명이 'VITE_GEMINI_API_KEY'인지 확인하세요. (VITE_ 접두사가 필수입니다)");
-      alert("AI 설정을 불러올 수 없습니다. 개발자 콘솔(F12)을 확인해주세요.");
+      console.error("🚨 [Vibe Bridge] Gemini API 키를 인식할 수 없습니다.");
+      console.warn("💡 환경 변수가 Cloudflare의 Production 및 Preview 환경 모두에 등록되었는지 확인하세요.");
+      alert("AI 설정을 불러올 수 없습니다. 환경 변수 등록 상태를 확인해주세요.");
       return null;
     }
 
     try {
-      // Gemini API 직접 호출 (서버리스 환경 대응)
-      const prompt = `강의 전문가로서 다음 텍스트를 분석하세요. 
-      반드시 다음 JSON 형식으로만 응답하세요: 
-      { "topic": "주제", "keyPoints": ["키워드1", "키워드2", "키워드3", "키워드4"], "summary": "3줄 요약" }
+      // [v1 정식 엔드포인트 및 gemini-1.5-pro 모델 적용]
+      const endpoint = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro:generateContent?key=${API_KEY}`;
       
-      내용: ${textContent.substring(0, 8000)}`;
+      // [Pro 모델용 고도화 프롬프트] 논리 구조 및 로봇 공학 맥락 강화
+      const prompt = `당신은 지능형 교육 중재 AI입니다. 다음 강의 자료를 정밀 분석하여 학생용 대시보드에 표시할 요약본을 생성하세요. 
+      - 자료의 전체적인 '논리 구조'와 핵심 '공식/이론'을 반드시 파악하세요.
+      - 로봇 공학적 맥락(제어 로직, 시스템 구조 등)이 포함되어 있다면 이를 중점적으로 추출하세요.
+      - 반드시 다음 JSON 형식으로만 응답하세요: 
+      { "topic": "강의 주제", "keyPoints": ["핵심1", "핵심2", "핵심3", "핵심4"], "summary": "구조적 분석이 포함된 3줄 요약" }
+      
+      내용: ${textContent.substring(0, 10000)}`;
 
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`, {
+      const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -138,18 +144,18 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
         })
       });
 
-      if (!response.ok) throw new Error("API 호출 권한 또는 네트워크 오류");
+      if (!response.ok) throw new Error("API 호출 실패 (엔드포인트 또는 키 오류)");
 
       const data = await response.json();
       const aiResultText = data.candidates[0].content.parts[0].text;
       
-      // AI 응답에서 순수 JSON만 추출하여 파싱
+      // 마크다운 태그를 제거하고 순수 JSON만 추출하여 파싱
       const cleanJson = aiResultText.replace(/```json|```/g, "").trim();
       return JSON.parse(cleanJson);
       
     } catch (err) {
-      console.error("AI Analysis Failed:", err);
-      alert("AI 분석 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
+      console.error("Gemini Pro Analysis Error:", err);
+      alert("고성능 AI 분석 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
       return null;
     }
   };
@@ -171,7 +177,7 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
         return;
       }
       
-      // [데이터 일관성 유지] 학생 화면과 실시간 동기화 (vibe_lecture_data 키 사용)
+      // [데이터 실시간 동기화] vibe_lecture_data 키를 사용하여 학생 화면과 공유
       localStorage.setItem('vibe_lecture_data', JSON.stringify({
         topic: summary.topic,
         keyPoints: summary.keyPoints,
