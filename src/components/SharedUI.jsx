@@ -94,19 +94,21 @@ function StudentEntryModal({ validCode, onClose, onEntry }) {
     const savedStatus = localStorage.getItem('vibe_lecture_status');
     const savedLecture = localStorage.getItem('vibe_lecture_data');
     
-    if (!savedStatus || !JSON.parse(savedStatus).isStarted || !savedLecture) {
-      alert('현재 진행 중인 강의가 없습니다. 교수님의 안내를 기다려주세요.');
+    if (!savedStatus || !JSON.parse(savedStatus).isStarted) {
+      alert('현재 진행 중인 강의가 없습니다. 교수님이 [실시간 세션 시작하기] 버튼을 누르셨는지 확인해주세요.');
       return;
     }
 
     try {
-      const data = JSON.parse(savedLecture);
-      if (inputCode !== data.code) {
-        alert('강의 코드가 일치하지 않습니다. 코드를 다시 확인해주세요.');
+      const lectureData = JSON.parse(savedLecture);
+      // 저장된 데이터의 code와 입력한 코드를 문자열로 변환하여 비교
+      if (String(inputCode).trim() !== String(lectureData.code).trim()) {
+        alert(`강의 코드가 일치하지 않습니다.\n입력하신 코드: ${inputCode}\n교실 코드: ${lectureData.code}`);
         return;
       }
       onEntry();
     } catch (err) {
+      console.error("Entry Error:", err);
       alert('입장 중 시스템 오류가 발생했습니다. 새로고침 후 다시 시도해주세요.');
     }
   };

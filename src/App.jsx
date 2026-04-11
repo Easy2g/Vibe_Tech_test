@@ -101,9 +101,10 @@ export default function App() {
   };
 
   const handleStartLecture = (context) => {
+    const fullContext = { ...context, code: lectureCode };
     localStorage.setItem(STORAGE_KEYS.LECTURE_STATUS, JSON.stringify({ isStarted: true }));
-    localStorage.setItem(STORAGE_KEYS.LECTURE_DATA, JSON.stringify(context));
-    setLectureContext(context);
+    localStorage.setItem(STORAGE_KEYS.LECTURE_DATA, JSON.stringify(fullContext));
+    setLectureContext(fullContext);
     setIsLectureStarted(true);
   };
 
