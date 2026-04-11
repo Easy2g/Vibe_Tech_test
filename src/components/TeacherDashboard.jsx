@@ -108,28 +108,29 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
   };
 
   /**
-   * [Gemini 3.1 Flash-Lite 단독 체제]
-   * 최신 초고속 엔진을 사용하여 전 학문 분야의 강의 자료를 정밀 분석합니다.
+   * [파싱 오류 수리 및 데이터 추출 강화]
+   * AI 응답에서 JSON 데이터만 정확히 뽑아내고, 에러 원인을 세분화하여 기록합니다.
    */
   const callAnalyzeAPI = async (textContent) => {
     const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 
     if (!API_KEY) {
-      console.error("🚨 [Vibe Bridge] API 키를 찾을 수 없습니다.");
+      console.error("🚨 [Vibe Bridge] API 키 누락");
       alert("AI 설정을 위한 API 키가 등록되지 않았습니다.");
       return null;
     }
 
-    // [범용 교육 조력자 프롬프트] 인문, 사회, 자연과학, 예술, 공학 전 분야 대응
+    // [지시문 엄격화] 인사말 및 부연 설명 차단
     const universalPrompt = `당신은 전 학문 분야의 강의 자료를 정교하게 구조화하는 범용 교육 조력자 AI입니다. 
     제공된 강의 자료를 정밀 분석하여 학생들을 위한 구조적 요약본을 생성하세요. 
-    - 자료에서 다루는 '핵심 개념의 정의'를 명확히 파악하세요.
-    - 개념들 사이의 '논리적 인과관계'와 이를 뒷받침하는 '학술적 근거'를 추출하세요.
-    - 반드시 다음 JSON 형식으로만 응답하세요: 
-    { "topic": "강의의 핵심 주제", "keyPoints": ["핵심개념1", "핵심개념2", "학술적근거1", "학술적근거2"], "summary": "개념 정의와 논리적 인과관계가 포함된 구조적 3줄 요약" }`;
+    
+    [응답 규칙 - 매우 중요]
+    1. 인사말, 추가 설명, 마크다운 기호 없이 오직 순수 JSON 데이터만 출력하세요.
+    2. 내용이 부족하더라도 형식을 맞춘 빈 JSON({ "topic": "", ... })이라도 출력하세요.
+    3. 반드시 다음 JSON 형식으로만 응답하세요: 
+    { "topic": "강의 주제", "keyPoints": ["핵심1", "핵심2", "학술적근거1", "학술적근거2"], "summary": "구조적 3줄 요약" }`;
 
     try {
-      // [안정적인 단일 엔드포인트 고정] gemini-3.1-flash-lite-preview 모델 전용
       const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=${API_KEY}`;
       
       const response = await fetch(endpoint, {
@@ -140,16 +141,28 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
         })
       });
 
-      if (!response.ok) throw new Error("API 호출 실패");
+      if (!response.ok) {
+        console.error(`🌐 [Network Error] 서버 응답 실패 (Status: ${response.status})`);
+        throw new Error("네트워크 연결 또는 서버 상태를 확인하세요.");
+      }
 
       const data = await response.json();
       const aiResultText = data.candidates[0].content.parts[0].text;
-      const cleanJson = aiResultText.replace(/```json|```/g, "").trim();
-      return JSON.parse(cleanJson);
+      
+      // [정밀 추출] 텍스트 내에서 처음과 끝 중괄호 { } 사이의 내용만 추출
+      const jsonRegex = /\{[\s\S]*\}/;
+      const match = aiResultText.match(jsonRegex);
+      
+      if (!match) {
+        console.error("🔍 [Parsing Error] 응답에서 JSON 데이터를 찾을 수 없습니다. (원문: " + aiResultText + ")");
+        throw new Error("데이터 추출 실패");
+      }
+
+      return JSON.parse(match[0].trim());
       
     } catch (err) {
-      console.error("AI Analysis Failed:", err);
-      alert("분석 서버와 연결할 수 없습니다. 네트워크 상태를 확인하세요.");
+      console.error("🚨 [Vibe Bridge] 최종 오류:", err.message);
+      alert("분석 결과를 불러오는 중 오류가 발생했습니다: " + err.message);
       return null;
     }
   };
