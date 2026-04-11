@@ -127,12 +127,13 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
       // [v1 정식 엔드포인트 및 gemini-1.5-pro 모델 적용]
       const endpoint = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro:generateContent?key=${API_KEY}`;
       
-      // [Pro 모델용 고도화 프롬프트] 논리 구조 및 로봇 공학 맥락 강화
-      const prompt = `당신은 지능형 교육 중재 AI입니다. 다음 강의 자료를 정밀 분석하여 학생용 대시보드에 표시할 요약본을 생성하세요. 
-      - 자료의 전체적인 '논리 구조'와 핵심 '공식/이론'을 반드시 파악하세요.
-      - 로봇 공학적 맥락(제어 로직, 시스템 구조 등)이 포함되어 있다면 이를 중점적으로 추출하세요.
+      // [범용 학술 분석 로직 적용] 전 학문 분야를 아우르는 구조적 분석 프롬프트
+      const prompt = `당신은 지능형 교육 중재 AI입니다. 제공된 강의 자료를 분석하여 학생용 대시보드에 표시할 구조적 요약본을 생성하세요. 
+      - 학문 분야(인문, 사회, 자연과학, 공학, 예술 등)에 관계없이 자료의 핵심 '개념 정의'와 '논리적 흐름'을 파악하세요.
+      - 특히 '원인과 결과', '주요 논거', '최종 결론'을 중심으로 구조화된 분석을 수행하세요.
+      - 해당 분야에서 가장 중요한 전문 용어 4개를 엄선하여 추출하세요.
       - 반드시 다음 JSON 형식으로만 응답하세요: 
-      { "topic": "강의 주제", "keyPoints": ["핵심1", "핵심2", "핵심3", "핵심4"], "summary": "구조적 분석이 포함된 3줄 요약" }
+      { "topic": "강의 주제", "keyPoints": ["핵심1", "핵심2", "핵심3", "핵심4"], "summary": "핵심 정의와 논리적 결론이 포함된 구조적 3줄 요약" }
       
       내용: ${textContent.substring(0, 10000)}`;
 
