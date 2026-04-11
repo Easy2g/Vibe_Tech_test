@@ -21,6 +21,27 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
 
   const misunderstandingRatio = studentCount > 0 ? Math.round((misunderstandingCount / studentCount) * 100) : 0;
 
+  // [수정] wordClicks가 push() 객체 모음일 경우를 대비한 집계 로직
+  const sortedKeywords = useMemo(() => {
+    const keywordMap = {};
+    Object.values(wordClicks || {}).forEach(item => {
+      // item이 숫자면 (기존 방식) 그대로 사용, 객체면 word 속성 사용
+      const word = typeof item === 'object' ? item.word : null; 
+      // 만약 App.jsx에서 wordClicks를 { '단어': count } 형식으로 보낸다면 keys를 돌아야 함
+      if (!word) return;
+      keywordMap[word] = (keywordMap[word] || 0) + 1;
+    });
+
+    // 만약 wordClicks가 { '단어': count } 형식으로 이미 집계되어 넘어온다면:
+    const finalMap = Object.keys(wordClicks).length > 0 && typeof Object.values(wordClicks)[0] === 'number'
+      ? wordClicks
+      : keywordMap;
+
+    return Object.entries(finalMap)
+      .filter(([_, count]) => count > 0)
+      .sort((a, b) => b[1] - a[1]);
+  }, [wordClicks]);
+
   // 자막 창 자동 스크롤 로직 (liveText가 변할 때마다 실행)
   useEffect(() => {
     if (scrollRef.current) {
@@ -259,6 +280,15 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
               )}
             </div>
           </div>
+          <div className="flex flex-col">
+            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Lecture Tempo</span>
+            <span className={`text-xs font-black ${
+              (lectureTempo?.value || lectureTempo) === '빠름' ? 'text-rose-500' : 
+              (lectureTempo?.value || lectureTempo) === '느림' ? 'text-amber-500' : 'text-indigo-500'
+            }`}>
+              {(lectureTempo?.value || lectureTempo) || '적당'}
+            </span>
+          </div>
           <div className="flex flex-col"><span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Audience</span><span className="text-xs font-black text-slate-700">{studentCount}명 접속 중</span></div>
         </div>
         <div className="bg-indigo-50 px-4 py-2 rounded-xl text-indigo-600 text-xs font-bold uppercase tracking-tighter">AI Lecture Monitoring Active</div>
@@ -269,12 +299,28 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
         <section className="flex-[2.5] bg-white rounded-3xl border border-slate-100 p-6 flex flex-col min-h-0 shadow-sm">
           <h3 className="text-[10px] font-black text-slate-400 uppercase mb-6 tracking-widest">실시간 집중 키워드</h3>
           <div className="flex-1 overflow-y-auto space-y-5 pr-2">
-            {Object.entries(wordClicks).map(([word, count]) => (
-              <div key={word} className="space-y-1.5">
-                <div className="flex justify-between text-[11px] font-bold text-slate-600"><span>{word}</span><span>{count}회</span></div>
-                <div className="w-full bg-slate-50 h-1.5 rounded-full overflow-hidden"><motion.div initial={{ width: 0 }} animate={{ width: `${(count/Math.max(...Object.values(wordClicks), 1))*100}%` }} className="h-full bg-indigo-500" /></div>
+            {sortedKeywords.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center opacity-20 text-center">
+                <span className="text-2xl mb-2">🔍</span>
+                <p className="text-[9px] font-bold uppercase leading-tight">학생들이 클릭한<br/>단어가 아직 없습니다</p>
               </div>
-            ))}
+            ) : (
+              sortedKeywords.map(([word, count]) => (
+                <div key={word} className="space-y-1.5">
+                  <div className="flex justify-between text-[11px] font-bold text-slate-600">
+                    <span>{word}</span>
+                    <span className="text-indigo-500">{count}회</span>
+                  </div>
+                  <div className="w-full bg-slate-50 h-1.5 rounded-full overflow-hidden">
+                    <motion.div 
+                      initial={{ width: 0 }} 
+                      animate={{ width: `${(count / Math.max(...sortedKeywords.map(k => k[1]), 1)) * 100}%` }} 
+                      className="h-full bg-indigo-500" 
+                    />
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </section>
 

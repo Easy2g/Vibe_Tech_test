@@ -44,9 +44,14 @@ export default function App() {
       if (snap.exists() && role === 'teacher') {
         const data = snap.val();
         setMisunderstandingCount(data.misunderstandingCount ?? 0);
+        // wordClicks가 push() 구조(객체)일 수도 있으므로 그대로 전달
         setWordClicks(data.wordClicks ?? {});
-        setLectureTempo(data.lectureTempo ?? 50);
+        setLectureTempo(data.lectureTempo ?? { value: '적당' });
       }
+    }));
+    // 학생도 lectureTempo 상태를 알아야 하이라이트 가능하므로 추가 리스너 (필요시)
+    unsubs.push(onValue(ref(db, `${sessionPath}/feedback/lectureTempo`), (snap) => {
+      if (snap.exists()) setLectureTempo(snap.val());
     }));
     unsubs.push(onValue(ref(db, `${sessionPath}/students`), (snap) => {
       setStudentCount(snap.exists() ? Object.keys(snap.val()).length : 0);

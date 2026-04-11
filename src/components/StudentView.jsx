@@ -70,13 +70,41 @@ export default function StudentView({ onWordClick, lastActivity, onTempoChange, 
           </div>
         </div>
 
-        <motion.button whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.98 }} onClick={onMisunderstand} className="flex-[4] bg-rose-50 border border-rose-100 rounded-[2.5rem] flex flex-col items-center justify-center gap-3 group shadow-sm">
-          <span className="text-4xl grayscale group-hover:grayscale-0 transition-all">🤔</span>
-          <div className="text-center">
-            <p className="text-xl font-black text-rose-600 tracking-tight">설명이 너무 어려워요</p>
-            <p className="text-[10px] text-rose-400 font-bold uppercase mt-1 tracking-tighter">익명으로 교수님께 신호를 보냅니다</p>
+        <div className="flex-[4] flex flex-col gap-2">
+          {/* 위: 강의 속도 */}
+          <div className="flex-1 bg-white border border-slate-100 rounded-[2rem] p-4 flex flex-col items-center justify-center shadow-sm">
+            <p className="text-[10px] font-bold text-slate-400 uppercase mb-3 tracking-widest">강의 속도 피드백</p>
+            <div className="flex gap-2 w-full max-w-xs">
+              {["느림", "적당", "빠름"].map((tempo) => (
+                <button
+                  key={tempo}
+                  onClick={() => onTempoChange({ value: tempo, timestamp: Date.now() })}
+                  className={`flex-1 py-3 rounded-2xl text-xs font-black transition-all border ${
+                    (lectureTempo?.value || lectureTempo) === tempo
+                      ? "bg-indigo-600 border-indigo-600 text-white shadow-md scale-[1.02]"
+                      : "bg-white border-slate-100 text-slate-400 hover:border-indigo-200 hover:text-indigo-500"
+                  }`}
+                >
+                  {tempo}
+                </button>
+              ))}
+            </div>
           </div>
-        </motion.button>
+
+          {/* 아래: 설명이 너무 어려워요 */}
+          <motion.button 
+            whileHover={{ scale: 1.01 }} 
+            whileTap={{ scale: 0.98 }} 
+            onClick={onMisunderstand} 
+            className="flex-1 bg-rose-50 border border-rose-100 rounded-[2rem] flex flex-col items-center justify-center gap-1 group shadow-sm"
+          >
+            <span className="text-3xl grayscale group-hover:grayscale-0 transition-all">🤔</span>
+            <div className="text-center">
+              <p className="text-lg font-black text-rose-600 tracking-tight">설명이 너무 어려워요</p>
+              <p className="text-[9px] text-rose-400 font-bold uppercase tracking-tighter">익명 신호 보내기</p>
+            </div>
+          </motion.button>
+        </div>
       </div>
 
       {/* [우측] AI 강의 요약 패널 */}
