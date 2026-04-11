@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 // ==========================================
@@ -136,19 +136,42 @@ export function WordExplanationModal({ word, onClose, lectureContext }) {
     const fetchExplanation = async () => {
       setIsLoading(true);
       try {
-        const response = await fetch('/explain', {
+        const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
+        if (!API_KEY) throw new Error('API 키 없음');
+
+        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
+
+        const prompt = `당신은 대학 강의 중 학생을 돕는 AI 튜터입니다.
+현재 강의 주제: "${lectureContext?.topic || '일반 학술 강의'}"
+
+학생이 "${word}"라는 단어를 클릭했습니다.
+이 단어를 현재 강의 주제와 연결하여 쉽고 명확하게 설명해주세요.
+
+규칙:
+- 3~4문장으로 간결하게
+- 전문 용어는 쉬운 말로 풀어서
+- 현재 강의 맥락과 연결해서 설명
+- 인사말이나 부연 설명 없이 바로 설명 시작`;
+
+        const response = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ word, topic: lectureContext?.topic })
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: { maxOutputTokens: 300, temperature: 0.7 }
+          })
         });
-        if (response.ok) {
-          const data = await response.json();
-          setExplanation(data.explanation);
-        } else {
-          throw new Error('설명을 가져오지 못했습니다.');
-        }
+
+        const data = await response.json();
+
+        if (!response.ok) throw new Error(data.error?.message || 'API 오류');
+
+        const resultText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!resultText) throw new Error('응답 없음');
+
+        setExplanation(resultText);
       } catch (err) {
-        setExplanation(`${word}에 대한 상세 정보를 실시간으로 분석할 수 없습니다. 잠시 후 다시 시도해주세요.`);
+        setExplanation(`"${word}"에 대한 설명을 불러오는 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.`);
       } finally {
         setIsLoading(false);
       }

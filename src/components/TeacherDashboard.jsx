@@ -141,7 +141,7 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
     [주의] 인사말이나 부연 설명은 절대 하지 말고 오직 { } 데이터만 출력하세요.`;
 
     try {
-      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${API_KEY}`;
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
       const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
