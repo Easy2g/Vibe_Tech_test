@@ -109,27 +109,47 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
   };
 
   /**
-   * [진짜 인공지능 연결] 백엔드 AI 분석 API 호출
+   * [진짜 인공지능 연결] Vite 환경 변수를 통한 Gemini API 직접 호출
    */
   const callAnalyzeAPI = async (textContent) => {
+    const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
+
+    // [안전 장치] API 키가 정의되지 않았을 경우 디버깅 가이드 출력
+    if (!API_KEY) {
+      console.error("🚨 [Vibe Bridge] API 키 인식 실패!");
+      console.warn("💡 디버깅 팁: .env 파일의 변수명이 'VITE_GEMINI_API_KEY'인지 확인하세요. (VITE_ 접두사가 필수입니다)");
+      alert("AI 설정을 불러올 수 없습니다. 개발자 콘솔(F12)을 확인해주세요.");
+      return null;
+    }
+
     try {
-      const response = await fetch("/analyze", {
+      // Gemini API 직접 호출 (서버리스 환경 대응)
+      const prompt = `강의 전문가로서 다음 텍스트를 분석하세요. 
+      반드시 다음 JSON 형식으로만 응답하세요: 
+      { "topic": "주제", "keyPoints": ["키워드1", "키워드2", "키워드3", "키워드4"], "summary": "3줄 요약" }
+      
+      내용: ${textContent.substring(0, 8000)}`;
+
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ textContent: textContent.substring(0, 10000) }),
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }]
+        })
       });
+
+      if (!response.ok) throw new Error("API 호출 권한 또는 네트워크 오류");
+
+      const data = await response.json();
+      const aiResultText = data.candidates[0].content.parts[0].text;
       
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "AI 서버 응답 오류");
-      }
-      
-      // AI가 반환한 실제 데이터 { topic, keyPoints, summary }
-      return await response.json();
+      // AI 응답에서 순수 JSON만 추출하여 파싱
+      const cleanJson = aiResultText.replace(/```json|```/g, "").trim();
+      return JSON.parse(cleanJson);
       
     } catch (err) {
       console.error("AI Analysis Failed:", err);
-      alert("AI 분석에 실패했습니다. (원인: " + err.message + ")\nCloudflare 대시보드에서 GEMINI_API_KEY 설정을 확인하세요.");
+      alert("AI 분석 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
       return null;
     }
   };
@@ -151,7 +171,7 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
         return;
       }
       
-      // [진짜 인공지능 데이터 전파] 학생들과 즉시 공유
+      // [데이터 일관성 유지] 학생 화면과 실시간 동기화 (vibe_lecture_data 키 사용)
       localStorage.setItem('vibe_lecture_data', JSON.stringify({
         topic: summary.topic,
         keyPoints: summary.keyPoints,
