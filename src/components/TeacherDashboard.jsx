@@ -108,8 +108,8 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
   };
 
   /**
-   * [범용 학술 분석 및 모델 자동 전환 시스템]
-   * 1차로 Pro 모델을 시도하고, 404 등 오류 발생 시 Flash 모델로 즉시 전환하여 분석을 완수합니다.
+   * [최신 3.1 라이트 모델 및 범용 분석 로직 적용]
+   * gemini-3.1-flash-lite-preview 모델을 사용하여 전 학문 분야의 강의를 초고속으로 분석합니다.
    */
   const callAnalyzeAPI = async (textContent) => {
     const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
@@ -121,13 +121,14 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
       return null;
     }
 
-    // [범용 학술 분석 프롬프트] 인문, 사회, 자연과학, 예술, 공학 등 전 분야 대응
-    const universalPrompt = `당신은 전 학문 분야를 아우르는 전문 학습 조력자 AI입니다. 
+    // [범용 교육 조력자 프롬프트] 인문, 사회, 자연과학, 예술, 공학 등 모든 학문 대응
+    const universalPrompt = `당신은 전 학문 분야의 강의 자료를 정교하게 구조화하는 범용 교육 조력자 AI입니다. 
     제공된 강의 자료를 정밀 분석하여 학생들을 위한 구조적 요약본을 생성하세요. 
-    - 자료의 '핵심 정의'와 개념 간의 '논리적 인과관계'를 명확히 파악하세요.
-    - 이론을 뒷받침하는 '주요 사례'나 구체적인 '데이터'가 있다면 이를 중점적으로 추출하세요.
+    - 자료에서 다루는 '핵심 개념의 정의'를 명확히 파악하세요.
+    - 개념들 사이의 '논리적 인과관계'와 이를 뒷받침하는 '학술적 근거'를 추출하세요.
+    - 이론을 뒷받침하는 '주요 사례'가 있다면 중점적으로 포함하세요.
     - 반드시 다음 JSON 형식으로만 응답하세요: 
-    { "topic": "강의의 핵심 주제", "keyPoints": ["핵심용어1", "핵심용어2", "핵심용어3", "핵심용어4"], "summary": "논리적 흐름과 사례가 포함된 구조적 3줄 요약" }`;
+    { "topic": "강의의 핵심 주제", "keyPoints": ["핵심개념1", "핵심개념2", "학술적근거1", "학술적근거2"], "summary": "개념 정의와 논리적 인과관계가 포함된 구조적 3줄 요약" }`;
 
     // API 요청 공통 로직
     const fetchAI = async (modelName) => {
@@ -136,7 +137,7 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: `${universalPrompt}\n\n분석할 내용:\n${textContent.substring(0, 10000)}` }] }]
+          contents: [{ parts: [{ text: `${universalPrompt}\n\n분석할 내용:\n${textContent.substring(0, 12000)}` }] }]
         })
       });
 
@@ -149,12 +150,12 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
     };
 
     try {
-      // 1단계: 고성능 Pro 모델 호출 시도
-      console.log("🚀 [Vibe Bridge] 고성능 Pro 모델 분석을 시작합니다...");
-      return await fetchAI("gemini-1.5-pro");
+      // 1단계: 최신 gemini-3.1-flash-lite-preview 모델 시도
+      console.log("🚀 [Vibe Bridge] 최신 3.1 라이트 엔진 분석을 시작합니다...");
+      return await fetchAI("gemini-3.1-flash-lite-preview");
     } catch (err) {
-      // 2단계: 실패 시 Flash 모델로 자동 전환 (Fail-over)
-      console.warn("⚠️ [Vibe Bridge] Pro 모델 연결 지연 또는 404 발생. 최적화된 Flash 모델로 긴급 전환하여 분석을 진행합니다.");
+      // 2단계: 실패 시 안정적인 Flash 모델로 자동 전환 (Fail-over)
+      console.warn("⚠️ [Vibe Bridge] 최신 모델 응답 지연. 안정적인 Flash 모델로 전환하여 분석을 진행합니다.");
       try {
         return await fetchAI("gemini-1.5-flash");
       } catch (finalErr) {
