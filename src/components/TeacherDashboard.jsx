@@ -227,6 +227,64 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
     onStart({ topic: analyzedSummary.topic, keyPoints: analyzedSummary.keyPoints, summary: analyzedSummary.summary });
   };
 
+  // [AI Smart Insight 생성 함수]
+  const callInsightAPI = async (transcript, keywords, ratio) => {
+    const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
+    if (!API_KEY) return null;
+
+    const prompt = `당신은 베테랑 교수자의 수업을 돕는 실시간 교육 분석가입니다.
+현재 수업 상황:
+1. 최근 강의 발언: "${transcript.slice(-1500)}"
+2. 학생 집중 키워드: ${keywords.join(', ') || '없음'}
+3. 실시간 미이해 비율: ${ratio}%
+
+위 데이터를 바탕으로 교수에게 지금 당장 필요한 '수업 전략' 1가지를 제안하세요.
+반드시 다음 JSON 형식으로만 응답하세요:
+{ "type": "info" 또는 "danger", "title": "한 줄 제목", "desc": "상세 제안(2문장 이내)" }
+* 미이해 비율이 30%를 넘거나 특정 단어 클릭이 많으면 type을 "danger"로 설정하세요.
+* 인사말 없이 JSON 데이터만 출력하세요.`;
+
+    try {
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${API_KEY}`;
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+      });
+
+      const data = await response.json();
+      const aiResultText = data.candidates[0].content.parts[0].text;
+      const jsonRegex = /\{[\s\S]*\}/;
+      const match = aiResultText.match(jsonRegex);
+      if (!match) return null;
+      return JSON.parse(match[0].trim());
+    } catch (err) {
+      return null;
+    }
+  };
+
+  // [AI 실시간 인사이트 갱신 시스템] 1분마다 분석
+  useEffect(() => {
+    if (!isStarted) return;
+
+    const refreshInsight = async () => {
+      if (transcriptBuffer.current.length < 100) return;
+
+      const insight = await callInsightAPI(
+        transcriptBuffer.current, 
+        sortedKeywords.slice(0, 3).map(k => k[0]), 
+        misunderstandingRatio
+      );
+
+      if (insight) {
+        setAiInsights(prev => [insight, ...prev].slice(0, 3)); // 최근 3개 유지
+      }
+    };
+
+    const interval = setInterval(refreshInsight, 60000);
+    return () => clearInterval(interval);
+  }, [isStarted, sortedKeywords, misunderstandingRatio]);
+
   if (!isStarted) {
     return (
       <div className="h-full flex flex-col items-center justify-center bg-white rounded-3xl border-2 border-dashed border-slate-200 p-12 text-center overflow-hidden shadow-sm">
@@ -342,7 +400,13 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
         <div className="flex-[3.5] flex flex-col gap-4 min-h-0">
           <section className="bg-white rounded-3xl border border-slate-100 p-6 flex flex-col shrink-0 shadow-sm text-center">
             <h3 className="text-[10px] font-black text-slate-400 uppercase mb-4 tracking-widest">학생 이해도</h3>
-            <div className="text-4xl font-black text-slate-800 mb-1">{misunderstandingRatio}%</div>
+            <motion.div 
+              animate={misunderstandingRatio > 30 ? { scale: [1, 1.1, 1], color: '#e11d48' } : { scale: 1, color: '#1e293b' }}
+              transition={{ repeat: misunderstandingRatio > 30 ? Infinity : 0, duration: 2 }}
+              className="text-4xl font-black mb-1"
+            >
+              {misunderstandingRatio}%
+            </motion.div>
             <div className="text-[9px] text-rose-500 font-bold uppercase tracking-tighter">지원 요청: {misunderstandingCount}건</div>
           </section>
 
