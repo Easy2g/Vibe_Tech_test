@@ -45,13 +45,22 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
     };
     
     recognition.onerror = (event) => {
+      // [침묵 에러 수리] 소리가 들리지 않는 현상은 에러가 아닌 대기 상태로 처리
+      if (event.error === 'no-speech') {
+        return; // 알림 없이 조용히 종료 (onend에서 자동 재시작됨)
+      }
       console.error("STT Error:", event.error);
-      if (event.error === 'network') alert("네트워크 연결을 확인하세요.");
+      if (event.error === 'network') console.warn("네트워크 연결을 확인하세요.");
+    };
+
+    recognition.onstart = () => {
+      console.log("🎤 음성 분석 시작됨");
     };
 
     recognition.onend = () => { 
       if (isStarted) {
-        try { recognition.start(); } catch(e) {}
+        // [안전 장치] 이미 인식이 실행 중일 때 발생하는 에러 방지
+        try { recognition.start(); } catch(e) { /* 무시 */ }
       } 
     };
     
