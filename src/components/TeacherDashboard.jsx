@@ -108,56 +108,60 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
   };
 
   /**
-   * [API 404 수리 및 범용 학술 분석 모드]
-   * gemini-1.5-pro 모델과 v1beta 엔드포인트를 사용하여 모든 학문의 강의를 분석합니다.
+   * [범용 학술 분석 및 모델 자동 전환 시스템]
+   * 1차로 Pro 모델을 시도하고, 404 등 오류 발생 시 Flash 모델로 즉시 전환하여 분석을 완수합니다.
    */
   const callAnalyzeAPI = async (textContent) => {
     const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 
+    // [안전 장치] 환경 변수 확인
     if (!API_KEY) {
-      console.error("🚨 [Vibe Bridge] Gemini API 키를 인식할 수 없습니다.");
-      console.warn("💡 환경 변수 설정(VITE_GEMINI_API_KEY)을 확인해주세요.");
+      console.error("🚨 [Vibe Bridge] API 키를 인식할 수 없습니다. 환경 변수를 확인해주세요.");
       alert("AI 설정을 불러올 수 없습니다. 환경 변수 등록 상태를 확인해주세요.");
       return null;
     }
 
-    try {
-      // [v1beta 엔드포인트 사용] 404 에러를 방지하고 Pro 모델의 성능을 안정적으로 끌어냅니다.
-      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${API_KEY}`;
-      
-      // [범용 학술 분석 프롬프트] 인문, 사회, 자연과학, 예술, 공학 등 모든 분야 대응
-      const prompt = `당신은 전 학문 분야(인문, 사회, 자연과학, 예술, 공학 등)의 강의 내용을 분석하는 전문 학습 조력자 AI입니다. 
-      제공된 강의 자료를 정밀 분석하여 다음 가이드를 따라 요약본을 생성하세요.
+    // [범용 학술 분석 프롬프트] 인문, 사회, 자연과학, 예술, 공학 등 전 분야 대응
+    const universalPrompt = `당신은 전 학문 분야를 아우르는 전문 학습 조력자 AI입니다. 
+    제공된 강의 자료를 정밀 분석하여 학생들을 위한 구조적 요약본을 생성하세요. 
+    - 자료의 '핵심 정의'와 개념 간의 '논리적 인과관계'를 명확히 파악하세요.
+    - 이론을 뒷받침하는 '주요 사례'나 구체적인 '데이터'가 있다면 이를 중점적으로 추출하세요.
+    - 반드시 다음 JSON 형식으로만 응답하세요: 
+    { "topic": "강의의 핵심 주제", "keyPoints": ["핵심용어1", "핵심용어2", "핵심용어3", "핵심용어4"], "summary": "논리적 흐름과 사례가 포함된 구조적 3줄 요약" }`;
 
-      - 자료의 '핵심 정의'와 개념들 사이의 '논리적 인과관계'를 명확히 파악하세요.
-      - 주장을 뒷받침하는 '주요 사례'나 구체적인 '데이터'가 있다면 이를 중점적으로 추출하세요.
-      - 특정 전공에 치우치지 않는 보편적인 학술 언어를 사용하세요.
-      - 반드시 다음 JSON 형식으로만 응답하세요: 
-      { "topic": "강의의 핵심 주제", "keyPoints": ["핵심용어1", "핵심용어2", "핵심용어3", "핵심용어4"], "summary": "논리적 인과관계와 주요 사례가 포함된 구조적 3줄 요약" }
-      
-      내용: ${textContent.substring(0, 10000)}`;
-
+    // API 요청 공통 로직
+    const fetchAI = async (modelName) => {
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${API_KEY}`;
       const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }]
+          contents: [{ parts: [{ text: `${universalPrompt}\n\n분석할 내용:\n${textContent.substring(0, 10000)}` }] }]
         })
       });
 
-      if (!response.ok) throw new Error("API 엔드포인트 연결 실패 (404 오류 발생)");
+      if (!response.ok) throw new Error(`Status ${response.status} from ${modelName}`);
 
       const data = await response.json();
       const aiResultText = data.candidates[0].content.parts[0].text;
-      
-      // AI 응답에서 마크다운 형식을 제거하고 순수 JSON만 추출
       const cleanJson = aiResultText.replace(/```json|```/g, "").trim();
       return JSON.parse(cleanJson);
-      
+    };
+
+    try {
+      // 1단계: 고성능 Pro 모델 호출 시도
+      console.log("🚀 [Vibe Bridge] 고성능 Pro 모델 분석을 시작합니다...");
+      return await fetchAI("gemini-1.5-pro");
     } catch (err) {
-      console.error("Gemini Pro 범용 분석 오류:", err);
-      alert("AI 분석 중 오류가 발생했습니다. (404 또는 네트워크 문제)");
-      return null;
+      // 2단계: 실패 시 Flash 모델로 자동 전환 (Fail-over)
+      console.warn("⚠️ [Vibe Bridge] Pro 모델 연결 지연 또는 404 발생. 최적화된 Flash 모델로 긴급 전환하여 분석을 진행합니다.");
+      try {
+        return await fetchAI("gemini-1.5-flash");
+      } catch (finalErr) {
+        console.error("❌ [Vibe Bridge] 모든 AI 모델 호출에 실패했습니다.");
+        alert("AI 분석 서버와 통신할 수 없습니다. 잠시 후 다시 시도해주세요.");
+        return null;
+      }
     }
   };
 
