@@ -109,10 +109,9 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
   };
 
   /**
-   * [프로덕션] 스마트 분석 엔진 (서버 미응답 시 브라우저 직접 분석 시도)
+   * [진짜 인공지능 연결] 백엔드 AI 분석 API 호출
    */
   const callAnalyzeAPI = async (textContent) => {
-    // 1. 먼저 백엔드 함수 호출 시도
     try {
       const response = await fetch("/analyze", {
         method: "POST",
@@ -120,42 +119,39 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
         body: JSON.stringify({ textContent: textContent.substring(0, 10000) }),
       });
       
-      if (response.ok) return await response.json();
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "AI 서버 응답 오류");
+      }
+      
+      // AI가 반환한 실제 데이터 { topic, keyPoints, summary }
+      return await response.json();
+      
     } catch (err) {
-      console.warn("백엔드 서버를 찾을 수 없습니다. (로컬 환경)");
+      console.error("AI Analysis Failed:", err);
+      alert("AI 분석에 실패했습니다. (원인: " + err.message + ")\nCloudflare 대시보드에서 GEMINI_API_KEY 설정을 확인하세요.");
+      return null;
     }
-
-    // 2. 백엔드 실패 시 비상용 로직 (텍스트 정밀 추출)
-    console.log("로컬 정밀 분석 엔진 가동...");
-    
-    // 유효한 문장 찾기 (공백 제거 후 첫 100자 중 첫 줄)
-    const lines = textContent.split('\n').map(l => l.trim()).filter(l => l.length > 5);
-    const topicCandidate = lines[0] || "강의 자료 기반 실시간 맥락 분석";
-    
-    // 명사 위주 키워드 추출 (간단한 형태소 분석 모사)
-    const keywords = textContent.match(/[가-힣]{2,6}/g) || ["강의", "분석", "데이터"];
-    const wordFreq = {};
-    keywords.forEach(w => wordFreq[w] = (wordFreq[w] || 0) + 1);
-    const sortedKeywords = Object.keys(wordFreq).sort((a, b) => wordFreq[b] - wordFreq[a]).slice(0, 4);
-
-    return {
-      topic: topicCandidate.substring(0, 40),
-      keyPoints: sortedKeywords,
-      summary: "현재 로컬 개발 환경에서 실시간 텍스트 분석이 진행되었습니다. 배포 후에는 실제 AI가 더 상세한 요약을 제공합니다."
-    };
   };
 
   const handleFileChange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
     setIsUploading(true);
+    setAnalysisProgress(10);
+    
     try {
       let textContent = file.type === "application/pdf" ? await extractTextFromPDF(await file.arrayBuffer()) : await file.text();
       setAnalysisProgress(60);
       
       const summary = await callAnalyzeAPI(textContent);
       
-      // [프로덕션] 가상 서버 키 통일
+      if (!summary) {
+        setIsUploading(false);
+        return;
+      }
+      
+      // [진짜 인공지능 데이터 전파] 학생들과 즉시 공유
       localStorage.setItem('vibe_lecture_data', JSON.stringify({
         topic: summary.topic,
         keyPoints: summary.keyPoints,
@@ -167,7 +163,7 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
       setIsUploading(false);
       setIsAnalyzed(true);
     } catch (err) {
-      alert("문서 분석 오류: " + err.message);
+      alert("문서 읽기 오류: " + err.message);
       setIsUploading(false);
     }
   };
