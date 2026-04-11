@@ -16,6 +16,8 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
   const [aiInsights, setAiInsights] = useState([]);
   const transcriptBuffer = useRef(""); 
   const scrollRef = useRef(null); // 자막 자동 스크롤용
+  const recognitionRef = useRef(null);
+  const isDestroyedRef = useRef(false);
 
   const misunderstandingRatio = studentCount > 0 ? Math.round((misunderstandingCount / studentCount) * 100) : 0;
 
@@ -29,70 +31,90 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
   // [무한 루프 실시간 자막 시스템]
   useEffect(() => {
     if (!isStarted) return;
-    
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      setSttStatus('error');
-      console.error("이 브라우저는 음성 인식을 지원하지 않습니다. Chrome을 사용해주세요.");
-      return;
-    }
+    isDestroyedRef.current = false;
 
-    let recognition = null;
-    let isDestroyed = false; // cleanup 후 재시작 방지 플래그
-
-    const startRecognition = () => {
-      if (isDestroyed) return;
-
-      recognition = new SpeechRecognition();
-      recognition.continuous = true;
-      recognition.interimResults = true;
-      recognition.lang = 'ko-KR';
-      recognition.maxAlternatives = 1;
-
-      recognition.onstart = () => {
-        setSttStatus('listening');
-      };
-
-      recognition.onresult = (event) => {
-        let finalText = '';
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          if (event.results[i].isFinal) {
-            finalText += event.results[i][0].transcript;
-            transcriptBuffer.current += ' ' + event.results[i][0].transcript;
-          }
-        }
-        if (finalText.trim()) onLiveTextUpdate(finalText.trim());
-      };
-
-      recognition.onerror = (event) => {
-        // no-speech, aborted는 정상 상황 — 조용히 재시작
-        if (event.error === 'no-speech' || event.error === 'aborted') return;
+    const startSTT = async () => {
+      // 마이크 권한 먼저 명시적으로 요청
+      try {
+        await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (err) {
+        alert("마이크 권한이 필요합니다. 브라우저 주소창 왼쪽 자물쇠 아이콘에서 마이크를 허용해주세요.");
+        console.error("마이크 권한 오류:", err);
         setSttStatus('error');
-        console.warn('STT 오류:', event.error);
-      };
+        return;
+      }
 
-      recognition.onend = () => {
-        if (isDestroyed) return;
-        setSttStatus('idle');
-        // 자동 재시작 (무한 루프 STT)
-        setTimeout(() => startRecognition(), 300);
-      };
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        alert("이 브라우저는 음성인식을 지원하지 않습니다. Chrome을 사용해주세요.");
+        setSttStatus('error');
+        return;
+      }
 
       try {
+        const recognition = new SpeechRecognition();
+        recognition.lang = "ko-KR";
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.maxAlternatives = 1;
+
+        recognition.onstart = () => {
+          console.log("STT 시작됨");
+          setSttStatus('listening');
+        };
+
+        recognition.onresult = (event) => {
+          let finalText = '';
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            if (event.results[i].isFinal) {
+              const transcript = event.results[i][0].transcript;
+              finalText += transcript;
+              transcriptBuffer.current += ' ' + transcript;
+            }
+          }
+          if (finalText.trim()) onLiveTextUpdate(finalText.trim());
+        };
+
+        recognition.onerror = (event) => {
+          if (event.error === "no-speech" || event.error === "aborted") return;
+          console.error("STT 오류:", event.error);
+          setSttStatus('error');
+          if (event.error === "not-allowed") {
+            alert("마이크 접근이 차단되었습니다. 브라우저 설정에서 마이크를 허용해주세요.");
+          }
+        };
+
+        recognition.onend = () => {
+          if (!isDestroyedRef.current) {
+            setSttStatus('idle');
+            setTimeout(() => {
+              if (!isDestroyedRef.current) {
+                try {
+                  recognition.start();
+                } catch (e) {
+                  console.warn("STT 재시작 실패:", e);
+                }
+              }
+            }, 300);
+          }
+        };
+
+        recognitionRef.current = recognition;
         recognition.start();
-      } catch (e) {
-        // 이미 실행 중인 경우 무시
-        console.warn('STT 시작 오류:', e);
+      } catch (err) {
+        console.error("STT 초기화 실패:", err);
+        alert("음성인식 초기화에 실패했습니다: " + err.message);
+        setSttStatus('error');
       }
     };
 
-    startRecognition();
+    startSTT();
 
     return () => {
-      isDestroyed = true;
-      if (recognition) {
-        recognition.onend = null; // 재시작 방지
-        recognition.stop();
+      isDestroyedRef.current = true;
+      if (recognitionRef.current) {
+        recognitionRef.current.onend = null;
+        recognitionRef.current.stop();
       }
     };
   }, [isStarted, onLiveTextUpdate]);
