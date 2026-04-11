@@ -109,11 +109,12 @@ export default function App() {
   };
 
   const handleLiveTextUpdate = useCallback((text) => {
-    if (role === 'teacher') {
-      setLiveText(prev => (prev.length > 2000 ? text : prev + ' ' + text));
-      // TeacherDashboard에서 개별적으로 전송하므로 여기서는 로컬 상태만 업데이트
-    }
-  }, [role]);
+    // 텍스트가 너무 길어지면 성능을 위해 앞부분을 자름
+    setLiveText(prev => {
+      const combined = prev ? prev + ' ' + text : text;
+      return combined.length > 3000 ? combined.slice(-2000) : combined;
+    });
+  }, []);
 
   const broadcastFeedback = (updates) => {
     const currentFeedback = { misunderstandingCount, wordClicks, lectureTempo, ...updates };
@@ -172,7 +173,7 @@ export default function App() {
         <AnimatePresence mode="wait">
           <motion.div key={role} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="h-full">
             {role === 'student' && <StudentView onWordClick={handleWordClick} lastActivity={lastActivity} onTempoChange={v => {setLectureTempo(v); broadcastFeedback({lectureTempo: v})}} lectureTempo={lectureTempo} onMisunderstand={handleMisunderstanding} liveText={liveText} lectureContext={lectureContext} />}
-            {role === 'teacher' && <TeacherDashboard wordClicks={wordClicks} lectureTempo={lectureTempo} isStarted={isLectureStarted} onStart={handleStartLecture} misunderstandingCount={misunderstandingCount} onLiveTextUpdate={handleLiveTextUpdate} studentCount={studentCount} />}
+            {role === 'teacher' && <TeacherDashboard wordClicks={wordClicks} lectureTempo={lectureTempo} isStarted={isLectureStarted} onStart={handleStartLecture} misunderstandingCount={misunderstandingCount} onLiveTextUpdate={handleLiveTextUpdate} studentCount={studentCount} liveText={liveText} />}
           </motion.div>
         </AnimatePresence>
       </main>
