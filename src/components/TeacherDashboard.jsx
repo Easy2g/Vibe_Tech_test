@@ -108,31 +108,30 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
   };
 
   /**
-   * [최신 3.1 라이트 모델 및 범용 분석 로직 적용]
-   * gemini-3.1-flash-lite-preview 모델을 사용하여 전 학문 분야의 강의를 초고속으로 분석합니다.
+   * [Gemini 3.1 Flash-Lite 단독 체제]
+   * 최신 초고속 엔진을 사용하여 전 학문 분야의 강의 자료를 정밀 분석합니다.
    */
   const callAnalyzeAPI = async (textContent) => {
     const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 
-    // [안전 장치] 환경 변수 확인
     if (!API_KEY) {
-      console.error("🚨 [Vibe Bridge] API 키를 인식할 수 없습니다. 환경 변수를 확인해주세요.");
-      alert("AI 설정을 불러올 수 없습니다. 환경 변수 등록 상태를 확인해주세요.");
+      console.error("🚨 [Vibe Bridge] API 키를 찾을 수 없습니다.");
+      alert("AI 설정을 위한 API 키가 등록되지 않았습니다.");
       return null;
     }
 
-    // [범용 교육 조력자 프롬프트] 인문, 사회, 자연과학, 예술, 공학 등 모든 학문 대응
+    // [범용 교육 조력자 프롬프트] 인문, 사회, 자연과학, 예술, 공학 전 분야 대응
     const universalPrompt = `당신은 전 학문 분야의 강의 자료를 정교하게 구조화하는 범용 교육 조력자 AI입니다. 
     제공된 강의 자료를 정밀 분석하여 학생들을 위한 구조적 요약본을 생성하세요. 
     - 자료에서 다루는 '핵심 개념의 정의'를 명확히 파악하세요.
     - 개념들 사이의 '논리적 인과관계'와 이를 뒷받침하는 '학술적 근거'를 추출하세요.
-    - 이론을 뒷받침하는 '주요 사례'가 있다면 중점적으로 포함하세요.
     - 반드시 다음 JSON 형식으로만 응답하세요: 
     { "topic": "강의의 핵심 주제", "keyPoints": ["핵심개념1", "핵심개념2", "학술적근거1", "학술적근거2"], "summary": "개념 정의와 논리적 인과관계가 포함된 구조적 3줄 요약" }`;
 
-    // API 요청 공통 로직
-    const fetchAI = async (modelName) => {
-      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${API_KEY}`;
+    try {
+      // [안정적인 단일 엔드포인트 고정] gemini-3.1-flash-lite-preview 모델 전용
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=${API_KEY}`;
+      
       const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -141,28 +140,17 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
         })
       });
 
-      if (!response.ok) throw new Error(`Status ${response.status} from ${modelName}`);
+      if (!response.ok) throw new Error("API 호출 실패");
 
       const data = await response.json();
       const aiResultText = data.candidates[0].content.parts[0].text;
       const cleanJson = aiResultText.replace(/```json|```/g, "").trim();
       return JSON.parse(cleanJson);
-    };
-
-    try {
-      // 1단계: 최신 gemini-3.1-flash-lite-preview 모델 시도
-      console.log("🚀 [Vibe Bridge] 최신 3.1 라이트 엔진 분석을 시작합니다...");
-      return await fetchAI("gemini-3.1-flash-lite-preview");
+      
     } catch (err) {
-      // 2단계: 실패 시 안정적인 Flash 모델로 자동 전환 (Fail-over)
-      console.warn("⚠️ [Vibe Bridge] 최신 모델 응답 지연. 안정적인 Flash 모델로 전환하여 분석을 진행합니다.");
-      try {
-        return await fetchAI("gemini-1.5-flash");
-      } catch (finalErr) {
-        console.error("❌ [Vibe Bridge] 모든 AI 모델 호출에 실패했습니다.");
-        alert("AI 분석 서버와 통신할 수 없습니다. 잠시 후 다시 시도해주세요.");
-        return null;
-      }
+      console.error("AI Analysis Failed:", err);
+      alert("분석 서버와 연결할 수 없습니다. 네트워크 상태를 확인하세요.");
+      return null;
     }
   };
 
