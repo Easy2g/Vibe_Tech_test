@@ -17,28 +17,52 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
 
   const misunderstandingRatio = studentCount > 0 ? Math.round((misunderstandingCount / studentCount) * 100) : 0;
 
-  // [Moonshine 엔진 연동] 실제 교수 음성용 외부 STT 스트리밍 엔진
+  // [Moonshine 엔진 연동] 16kHz PCM 오디오 스트리밍 로직
   useEffect(() => {
     if (!isStarted) return;
 
     let socket = null;
-    let mediaRecorder = null;
+    let audioCtx = null;
+    let scriptNode = null;
+    let source = null;
     let reconnectTimer = null;
 
-    const startMoonshineSession = async () => {
+    const startSTTStream = async () => {
       try {
+        // [설정] Moonshine 로컬 서버 WebSocket 엔드포인트
         socket = new WebSocket('ws://localhost:8000/stream');
+        socket.binaryType = 'arraybuffer';
 
         socket.onopen = async () => {
           console.log("🎤 Moonshine 엔진 가동 중 (WebSocket Connected)");
+          
+          // 마이크 권한 요청 및 스트림 캡처
           const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          mediaRecorder = new MediaRecorder(stream);
-          mediaRecorder.ondataavailable = (event) => {
-            if (event.data.size > 0 && socket.readyState === WebSocket.OPEN) {
-              socket.send(event.data);
+          
+          // 16kHz 샘플링 레이트로 오디오 컨텍스트 생성 (서버 요구 규격)
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+          source = audioCtx.createMediaStreamSource(stream);
+          
+          // 4096 버퍼 사이즈로 스크립트 프로세서 생성
+          scriptNode = audioCtx.createScriptProcessor(4096, 1, 1);
+          
+          scriptNode.onaudioprocess = (e) => {
+            if (socket.readyState === WebSocket.OPEN) {
+              const inputData = e.inputBuffer.getChannelData(0);
+              // Float32 데이터를 Int16 PCM 바이너리로 변환
+              const pcmBuffer = new Int16Array(inputData.length);
+              for (let i = 0; i < inputData.length; i++) {
+                // 클리핑 방지 및 정규화
+                const s = Math.max(-1, Math.min(1, inputData[i]));
+                pcmBuffer[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+              }
+              // 서버로 바이너리 데이터 전송
+              socket.send(pcmBuffer.buffer);
             }
           };
-          mediaRecorder.start(1000);
+
+          source.connect(scriptNode);
+          scriptNode.connect(audioCtx.destination);
         };
 
         socket.onmessage = (event) => {
@@ -47,6 +71,8 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
             if (data.text && data.text.trim()) {
               const text = data.text.trim();
               transcriptBuffer.current += " " + text;
+              
+              // 학생용 화면 실시간 동기화 (localStorage)
               localStorage.setItem('vibe_live_transcript', JSON.stringify({ 
                 text, 
                 timestamp: Date.now(),
@@ -58,22 +84,27 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
         };
 
         socket.onclose = () => {
-          reconnectTimer = setTimeout(startMoonshineSession, 3000);
+          console.warn("⚠️ STT 서버 연결 종료. 3초 후 재연결 시도...");
+          reconnectTimer = setTimeout(startSTTStream, 3000);
         };
+
       } catch (err) {
-        console.error("STT 연결 실패");
+        console.error("오디오 스트리밍 초기화 실패:", err);
+        alert("마이크를 연결하거나 Moonshine 서버 상태를 확인하세요.");
       }
     };
 
-    startMoonshineSession();
+    startSTTStream();
+
+    // Cleanup: 마이크 및 소켓 리소스 해제
     return () => {
-      if (mediaRecorder) mediaRecorder.stop();
+      if (audioCtx) audioCtx.close();
       if (socket) socket.close();
       if (reconnectTimer) clearTimeout(reconnectTimer);
     };
   }, [isStarted, onLiveTextUpdate]);
 
-  // [실전 강의 모드] 음성 데이터를 기반으로 실시간 강의 맥락 자동 갱신
+  // [실전 강의 모드] 음성 데이터를 기반으로 2분마다 실시간 강의 맥락 자동 갱신
   useEffect(() => {
     if (!isStarted) return;
 
@@ -82,7 +113,7 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
       if (currentSpeech.length < 300) return; 
 
       try {
-        console.log("📝 [Vibe Bridge] 실제 강의 음성을 바탕으로 맥락 최신화 중...");
+        console.log("📝 [Vibe Bridge] 실시간 음성 기반 강의 요약 갱신 중...");
         const newSummary = await callAnalyzeAPI(currentSpeech);
         if (newSummary) {
           localStorage.setItem('vibe_lecture_data', JSON.stringify(newSummary));
@@ -91,7 +122,6 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
       } catch (err) {}
     };
 
-    // 2분마다 실제 발화 내용을 분석하여 학생용 대시보드 갱신
     const interval = setInterval(refreshContextFromSpeech, 120000);
     return () => clearInterval(interval);
   }, [isStarted]);
@@ -110,7 +140,8 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
   };
 
   /**
-   * [파싱 오류 수리 및 데이터 추출 강화]
+   * [Gemini 3.1 Flash-Lite 범용 분석 엔진]
+   * 모든 학문 분야의 자료를 정교하게 구조화하여 요약합니다.
    */
   const callAnalyzeAPI = async (textContent) => {
     const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
@@ -133,8 +164,11 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
       const aiResultText = data.candidates[0].content.parts[0].text;
       const jsonRegex = /\{[\s\S]*\}/;
       const match = aiResultText.match(jsonRegex);
-      return match ? JSON.parse(match[0].trim()) : null;
+      
+      if (!match) throw new Error("JSON 파싱 실패");
+      return JSON.parse(match[0].trim());
     } catch (err) {
+      console.error("AI 분석 오류:", err);
       return null;
     }
   };
@@ -172,7 +206,7 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
             <motion.div key="upload" className="max-w-md space-y-6">
               <div className="w-20 h-20 bg-indigo-50 rounded-full flex items-center justify-center mx-auto text-3xl">📡</div>
               <h2 className="text-2xl font-bold text-slate-800">강의실 준비 완료</h2>
-              <p className="text-slate-500 text-sm">자료를 올리면 실시간 AI 분석 시스템이 활성화됩니다.</p>
+              <p className="text-slate-500 text-sm">강의 자료를 업로드하면 실시간 AI 분석 시스템이 활성화됩니다.</p>
               <label className="block w-full py-4 bg-indigo-600 text-white font-bold rounded-2xl cursor-pointer hover:bg-indigo-700 shadow-lg transition-all active:scale-[0.98]">
                 자료 선택 및 분석 시작
                 <input type="file" className="hidden" accept=".pdf,.txt,.md" onChange={handleFileChange} />
@@ -208,7 +242,7 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
               <div className="flex gap-0.5 items-center h-3">
                 {[1,2,3,4,5].map(i => <motion.div key={i} animate={{ height: [4, 12, 4] }} transition={{ duration: 0.5, repeat: Infinity, delay: i*0.1 }} className="w-0.5 bg-emerald-500" />)}
               </div>
-              Live Streaming
+              Live Streaming (Moonshine)
             </span>
           </div>
           <div className="flex flex-col"><span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Audience</span><span className="text-xs font-black text-slate-700">{studentCount}명 청강 중</span></div>
