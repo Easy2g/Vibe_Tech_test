@@ -318,12 +318,12 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
       {/* 상단 상태 바 */}
       <div className="h-16 flex-shrink-0 flex items-center justify-between px-6 bg-white rounded-2xl border border-slate-100 shadow-sm">
         <div className="flex gap-8">
-          <div className="flex flex-col">
-            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Mic Status</span>
+          <div className="flex flex-col" title="교수님의 음성 인식 시스템 가동 상태를 나타냅니다.">
+            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">마이크 상태</span>
             <div className="flex items-center">
               <span className={`text-xs font-black flex items-center gap-1.5 ${sttStatus === 'error' ? 'text-rose-500' : 'text-emerald-500'}`}>
                 <span className={`w-2 h-2 rounded-full ${sttStatus === 'listening' ? 'bg-emerald-500 animate-pulse' : sttStatus === 'error' ? 'bg-rose-500' : 'bg-slate-300'}`}></span>
-                {sttStatus === 'listening' ? 'Live Analyzing' : sttStatus === 'error' ? 'Mic Error' : 'Waiting...'}
+                {sttStatus === 'listening' ? '실시간 분석 중' : sttStatus === 'error' ? '마이크 오류' : '대기 중'}
               </span>
               {sttStatus === 'error' && (
                 <span className="text-[9px] text-rose-400 font-medium ml-2">
@@ -332,8 +332,8 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
               )}
             </div>
           </div>
-          <div className="flex flex-col">
-            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Lecture Tempo</span>
+          <div className="flex flex-col" title="학생들이 느끼는 전반적인 강의 속도 피드백입니다.">
+            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">강의 속도</span>
             <span className={`text-xs font-black ${
               (lectureTempo?.value || lectureTempo) === '빠름' ? 'text-rose-500' : 
               (lectureTempo?.value || lectureTempo) === '느림' ? 'text-amber-500' : 'text-indigo-500'
@@ -341,14 +341,20 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
               {(lectureTempo?.value || lectureTempo) || '적당'}
             </span>
           </div>
-          <div className="flex flex-col"><span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Audience</span><span className="text-xs font-black text-slate-700">{studentCount}명 접속 중</span></div>
+          <div className="flex flex-col" title="현재 강의 세션에 접속 중인 실시간 학생 수입니다.">
+            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">수강 인원</span>
+            <span className="text-xs font-black text-slate-700">{studentCount}명 접속 중</span>
+          </div>
         </div>
-        <div className="bg-indigo-50 px-4 py-2 rounded-xl text-indigo-600 text-xs font-bold uppercase tracking-tighter">AI Lecture Monitoring Active</div>
+        <div className="bg-indigo-50 px-4 py-2 rounded-xl text-indigo-600 text-xs font-bold uppercase tracking-tighter">AI 실시간 강의 모니터링 중</div>
       </div>
 
       <div className="flex-1 flex gap-4 min-h-0 overflow-hidden">
         {/* 왼쪽: 키워드 히트맵 */}
-        <section className="flex-[2.5] bg-white rounded-3xl border border-slate-100 p-6 flex flex-col min-h-0 shadow-sm">
+        <section 
+          className="flex-[2.5] bg-white rounded-3xl border border-slate-100 p-6 flex flex-col min-h-0 shadow-sm"
+          title="학생들이 자막에서 클릭하여 도움을 요청한 단어들의 빈도수입니다."
+        >
           <h3 className="text-[10px] font-black text-slate-400 uppercase mb-6 tracking-widest">실시간 집중 키워드</h3>
           <div className="flex-1 overflow-y-auto space-y-5 pr-2">
             {sortedKeywords.length === 0 ? (
@@ -377,11 +383,14 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
         </section>
 
         {/* 가운데: 실시간 자막 피드 */}
-        <section className="flex-[4] bg-white rounded-3xl border border-slate-100 p-6 flex flex-col min-h-0 shadow-sm relative overflow-hidden">
+        <section 
+          className="flex-[4] bg-white rounded-3xl border border-slate-100 p-6 flex flex-col min-h-0 shadow-sm relative overflow-hidden"
+          title="교수님의 음성이 실시간으로 텍스트화되어 표시되는 영역입니다."
+        >
           <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-50 rounded-full blur-3xl opacity-50 -mr-8 -mt-8"></div>
           <h3 className="text-[10px] font-black text-indigo-500 uppercase mb-4 tracking-widest relative z-10 flex items-center gap-2">
             <span className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-ping"></span>
-            Real-time Subtitle Feed
+            실시간 강의 자막
           </h3>
           <div ref={scrollRef} className="flex-1 overflow-y-auto pr-2 scroll-smooth relative z-10">
             <p className="text-base font-bold text-slate-700 leading-relaxed break-keep">
@@ -392,12 +401,15 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
 
         {/* 오른쪽: 이해도 및 AI 인사이트 */}
         <div className="flex-[3.5] flex flex-col gap-4 min-h-0">
-          {/* [전면 개편] 학생 이해도 패널 */}
-          <section className="bg-slate-900 rounded-3xl border border-white/5 p-6 flex flex-col shrink-0 shadow-xl overflow-hidden relative">
+          {/* 학생 이해도 분석 패널 */}
+          <section 
+            className="bg-slate-900 rounded-3xl border border-white/5 p-6 flex flex-col shrink-0 shadow-xl overflow-hidden relative"
+            title="미이해 학생 수와 강의 속도 데이터를 바탕으로 계산된 현재 수업의 위험도입니다."
+          >
             <div className="absolute top-0 right-0 w-20 h-20 bg-indigo-500/5 rounded-full blur-2xl -mr-10 -mt-10"></div>
             
             <div className="flex items-center justify-between mb-4 relative z-10">
-              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Student Understanding</h3>
+              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">학생 이해도 분석</h3>
               <span className={`text-[10px] px-2.5 py-1 rounded-full ${risk.bg}/20 ${risk.color} font-black border border-white/5 flex items-center gap-1.5`}>
                 {risk.emoji} {risk.level}
               </span>
@@ -405,7 +417,7 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
 
             <div className="mb-6 relative z-10">
               <div className="flex justify-between items-end mb-2">
-                <span className="text-[10px] font-bold text-slate-500 uppercase">Current Comprehension</span>
+                <span className="text-[10px] font-bold text-slate-500 uppercase">현재 수업 이해도</span>
                 <span className="text-2xl font-black text-white">{100 - misunderstandingRate}%</span>
               </div>
               <div className="w-full bg-white/5 rounded-full h-3 overflow-hidden p-0.5 border border-white/5">
@@ -425,11 +437,11 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
             </div>
 
             <div className="grid grid-cols-3 gap-2 relative z-10">
-              <div className="bg-white/5 rounded-2xl p-3 border border-white/5 text-center">
+              <div className="bg-white/5 rounded-2xl p-3 border border-white/5 text-center" title="이해하기 어렵다고 신호를 보낸 학생 수">
                 <p className="text-rose-400 font-black text-lg leading-none mb-1">{misunderstandingCount}</p>
-                <p className="text-slate-500 text-[9px] font-bold uppercase tracking-tighter">Confusion</p>
+                <p className="text-slate-500 text-[9px] font-bold uppercase tracking-tighter">미이해</p>
               </div>
-              <div className="bg-white/5 rounded-2xl p-3 border border-white/5 text-center">
+              <div className="bg-white/5 rounded-2xl p-3 border border-white/5 text-center" title="현재 학생들이 느끼는 강의 속도">
                 <p className={`font-black text-lg leading-none mb-1 ${
                   lectureTempo?.value === "빠름" ? "text-rose-400" :
                   lectureTempo?.value === "느림" ? "text-amber-400" :
@@ -437,24 +449,27 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
                 }`}>
                   {lectureTempo?.value || "적당"}
                 </p>
-                <p className="text-slate-500 text-[9px] font-bold uppercase tracking-tighter">Tempo</p>
+                <p className="text-slate-500 text-[9px] font-bold uppercase tracking-tighter">속도</p>
               </div>
-              <div className="bg-white/5 rounded-2xl p-3 border border-white/5 text-center">
+              <div className="bg-white/5 rounded-2xl p-3 border border-white/5 text-center" title="학생들이 자막에서 클릭한 질문 횟수">
                 <p className="text-indigo-400 font-black text-lg leading-none mb-1">{totalWordClicks}</p>
-                <p className="text-slate-500 text-[9px] font-bold uppercase tracking-tighter">Questions</p>
+                <p className="text-slate-500 text-[9px] font-bold uppercase tracking-tighter">질문</p>
               </div>
             </div>
           </section>
 
-          {/* [전면 개편] AI Smart Insight 패널 */}
-          <section className="flex-1 bg-slate-900 rounded-3xl p-6 flex flex-col min-h-0 text-white shadow-2xl relative overflow-hidden border border-white/5">
+          {/* AI 스마트 인사이트 패널 */}
+          <section 
+            className="flex-1 bg-slate-900 rounded-3xl p-6 flex flex-col min-h-0 text-white shadow-2xl relative overflow-hidden border border-white/5"
+            title="강의 내용과 학생 피드백을 실시간 분석하여 제안하는 맞춤형 수업 전략입니다."
+          >
             <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full blur-3xl -mr-10 -mt-10"></div>
             
             <div className="flex items-center gap-2 mb-6 relative z-10">
               <span className="text-lg">🤖</span>
-              <h3 className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.2em]">AI Smart Insight</h3>
+              <h3 className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.2em]">AI 스마트 인사이트</h3>
               {isInsightLoading && (
-                <span className="ml-auto text-[9px] text-indigo-300/40 font-black animate-pulse uppercase">Analyzing...</span>
+                <span className="ml-auto text-[9px] text-indigo-300/40 font-black animate-pulse uppercase">분석 중...</span>
               )}
             </div>
 
@@ -472,9 +487,9 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
                       {aiInsight}
                     </p>
                     <div className="mt-4 pt-3 border-t border-white/5 flex justify-between items-center">
-                      <span className="text-[8px] font-black text-indigo-400 uppercase tracking-widest">Real-time Strategy</span>
+                      <span className="text-[8px] font-black text-indigo-400 uppercase tracking-widest">실시간 수업 전략</span>
                       <span className="text-[8px] font-bold text-slate-500 uppercase">
-                        {new Date(lastInsightTimeRef.current).toLocaleTimeString("ko-KR", { hour12: false })} Update
+                        {new Date(lastInsightTimeRef.current).toLocaleTimeString("ko-KR", { hour12: false })} 갱신
                       </span>
                     </div>
                   </motion.div>
@@ -482,7 +497,7 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
                   <div className="h-full flex flex-col items-center justify-center opacity-30 text-center py-10">
                     <span className="text-3xl mb-4">🧠</span>
                     <p className="text-[10px] font-medium tracking-tight uppercase leading-relaxed">
-                      학생 반응 데이터가 임계치를 넘으면<br />AI가 실시간 수업 전략을 제안합니다
+                      학생 반응 데이터가 쌓이면<br />AI가 실시간 수업 전략을 제안합니다
                     </p>
                     <p className="text-[8px] text-slate-500 font-bold mt-3 uppercase tracking-tighter">
                       (이해 어려움 2명↑ · 질문 3회↑ · 속도 빠름 시 활성화)
