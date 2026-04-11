@@ -28,50 +28,72 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
 
   // [무한 루프 실시간 자막 시스템]
   useEffect(() => {
-    if (!isStarted || !('webkitSpeechRecognition' in window)) return;
-
-    const recognition = new window.webkitSpeechRecognition();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = 'ko-KR';
-
-    recognition.onstart = () => {
-      setSttStatus('listening');
-      console.log("🎤 Vibe Bridge 음성 분석 시스템 가동 중...");
-    };
-
-    recognition.onresult = (event) => {
-      let currentText = '';
-      for (let i = event.resultIndex; i < event.results.length; ++i) {
-        if (event.results[i].isFinal) {
-          const text = event.results[i][0].transcript;
-          currentText += text;
-          transcriptBuffer.current += " " + text;
-        }
-      }
-      if (currentText.trim()) onLiveTextUpdate(currentText);
-    };
-
-    recognition.onerror = (event) => {
-      if (event.error === 'no-speech') return; 
+    if (!isStarted) return;
+    
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
       setSttStatus('error');
-      setTimeout(() => {
-        if (isStarted) try { recognition.start(); } catch(e) {}
-      }, 1500);
-    };
+      console.error("이 브라우저는 음성 인식을 지원하지 않습니다. Chrome을 사용해주세요.");
+      return;
+    }
 
-    recognition.onend = () => { 
-      if (isStarted) {
+    let recognition = null;
+    let isDestroyed = false; // cleanup 후 재시작 방지 플래그
+
+    const startRecognition = () => {
+      if (isDestroyed) return;
+
+      recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'ko-KR';
+      recognition.maxAlternatives = 1;
+
+      recognition.onstart = () => {
+        setSttStatus('listening');
+      };
+
+      recognition.onresult = (event) => {
+        let finalText = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          if (event.results[i].isFinal) {
+            finalText += event.results[i][0].transcript;
+            transcriptBuffer.current += ' ' + event.results[i][0].transcript;
+          }
+        }
+        if (finalText.trim()) onLiveTextUpdate(finalText.trim());
+      };
+
+      recognition.onerror = (event) => {
+        // no-speech, aborted는 정상 상황 — 조용히 재시작
+        if (event.error === 'no-speech' || event.error === 'aborted') return;
+        setSttStatus('error');
+        console.warn('STT 오류:', event.error);
+      };
+
+      recognition.onend = () => {
+        if (isDestroyed) return;
         setSttStatus('idle');
-        try { recognition.start(); } catch(e) {}
-      } 
+        // 자동 재시작 (무한 루프 STT)
+        setTimeout(() => startRecognition(), 300);
+      };
+
+      try {
+        recognition.start();
+      } catch (e) {
+        // 이미 실행 중인 경우 무시
+        console.warn('STT 시작 오류:', e);
+      }
     };
 
-    recognition.start();
+    startRecognition();
 
-    return () => { 
-      recognition.onend = null; 
-      recognition.stop(); 
+    return () => {
+      isDestroyed = true;
+      if (recognition) {
+        recognition.onend = null; // 재시작 방지
+        recognition.stop();
+      }
     };
   }, [isStarted, onLiveTextUpdate]);
 
@@ -119,7 +141,7 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
     [주의] 인사말이나 부연 설명은 절대 하지 말고 오직 { } 데이터만 출력하세요.`;
 
     try {
-      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=${API_KEY}`;
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${API_KEY}`;
       const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -203,10 +225,17 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
         <div className="flex gap-8">
           <div className="flex flex-col">
             <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Mic Status</span>
-            <span className={`text-xs font-black flex items-center gap-1.5 ${sttStatus === 'error' ? 'text-rose-500' : 'text-emerald-500'}`}>
-              <span className={`w-2 h-2 rounded-full ${sttStatus === 'listening' ? 'bg-emerald-500 animate-pulse' : sttStatus === 'error' ? 'bg-rose-500' : 'bg-slate-300'}`}></span>
-              {sttStatus === 'listening' ? 'Live Analyzing' : sttStatus === 'error' ? 'Mic Error' : 'Waiting...'}
-            </span>
+            <div className="flex items-center">
+              <span className={`text-xs font-black flex items-center gap-1.5 ${sttStatus === 'error' ? 'text-rose-500' : 'text-emerald-500'}`}>
+                <span className={`w-2 h-2 rounded-full ${sttStatus === 'listening' ? 'bg-emerald-500 animate-pulse' : sttStatus === 'error' ? 'bg-rose-500' : 'bg-slate-300'}`}></span>
+                {sttStatus === 'listening' ? 'Live Analyzing' : sttStatus === 'error' ? 'Mic Error' : 'Waiting...'}
+              </span>
+              {sttStatus === 'error' && (
+                <span className="text-[9px] text-rose-400 font-medium ml-2">
+                  Chrome + HTTPS 환경에서만 작동합니다
+                </span>
+              )}
+            </div>
           </div>
           <div className="flex flex-col"><span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Audience</span><span className="text-xs font-black text-slate-700">{studentCount}명 접속 중</span></div>
         </div>
