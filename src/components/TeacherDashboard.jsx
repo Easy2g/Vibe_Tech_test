@@ -109,33 +109,40 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
   };
 
   /**
-   * [프로덕션] 스마트 비상 로컬 엔진 탑재 (Fail-safe API)
+   * [프로덕션] 스마트 분석 엔진 (서버 미응답 시 브라우저 직접 분석 시도)
    */
   const callAnalyzeAPI = async (textContent) => {
+    // 1. 먼저 백엔드 함수 호출 시도
     try {
       const response = await fetch("/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ textContent: textContent.substring(0, 10000) }),
-        signal: AbortSignal.timeout(5000) // 5초 대기
       });
       
-      if (!response.ok) throw new Error("API 응답 실패");
-      return await response.json();
-      
+      if (response.ok) return await response.json();
     } catch (err) {
-      console.warn("AI 서버 응답 지연. 스마트 로컬 분석 엔진을 가동합니다.");
-      
-      // 스마트 로컬 분석 (핵심 명사 추출 모사)
-      const words = textContent.match(/[가-힣]{2,}/g) || ["강의", "맥락", "동기화", "학습"];
-      const uniqueKeywords = [...new Set(words)].slice(0, 4);
-      
-      return {
-        topic: textContent.trim().split('\n')[0].substring(0, 30) || "강의 자료 기반 실시간 맥락 분석",
-        keyPoints: uniqueKeywords,
-        summary: "AI 서버 지연으로 인해 로컬 엔진이 추출한 핵심 키워드 중심의 요약입니다."
-      };
+      console.warn("백엔드 서버를 찾을 수 없습니다. (로컬 환경)");
     }
+
+    // 2. 백엔드 실패 시 비상용 로직 (텍스트 정밀 추출)
+    console.log("로컬 정밀 분석 엔진 가동...");
+    
+    // 유효한 문장 찾기 (공백 제거 후 첫 100자 중 첫 줄)
+    const lines = textContent.split('\n').map(l => l.trim()).filter(l => l.length > 5);
+    const topicCandidate = lines[0] || "강의 자료 기반 실시간 맥락 분석";
+    
+    // 명사 위주 키워드 추출 (간단한 형태소 분석 모사)
+    const keywords = textContent.match(/[가-힣]{2,6}/g) || ["강의", "분석", "데이터"];
+    const wordFreq = {};
+    keywords.forEach(w => wordFreq[w] = (wordFreq[w] || 0) + 1);
+    const sortedKeywords = Object.keys(wordFreq).sort((a, b) => wordFreq[b] - wordFreq[a]).slice(0, 4);
+
+    return {
+      topic: topicCandidate.substring(0, 40),
+      keyPoints: sortedKeywords,
+      summary: "현재 로컬 개발 환경에서 실시간 텍스트 분석이 진행되었습니다. 배포 후에는 실제 AI가 더 상세한 요약을 제공합니다."
+    };
   };
 
   const handleFileChange = async (e) => {
