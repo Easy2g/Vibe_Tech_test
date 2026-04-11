@@ -27,24 +27,17 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
 
     const startMoonshineSession = async () => {
       try {
-        // [설정] Moonshine 추론 서버 WebSocket 엔드포인트
         socket = new WebSocket('ws://localhost:8000/stream');
 
         socket.onopen = async () => {
           console.log("🎤 Moonshine 엔진 가동 중 (WebSocket Connected)");
-          
-          // 마이크 입력 캡처 (오디오 전용)
           const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
           mediaRecorder = new MediaRecorder(stream);
-
           mediaRecorder.ondataavailable = (event) => {
             if (event.data.size > 0 && socket.readyState === WebSocket.OPEN) {
-              // 음성 바이너리 데이터를 서버로 즉시 전송
               socket.send(event.data);
             }
           };
-
-          // 1초(1000ms) 간격으로 음성 데이터를 잘라서 전송
           mediaRecorder.start(1000);
         };
 
@@ -54,8 +47,6 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
             if (data.text && data.text.trim()) {
               const text = data.text.trim();
               transcriptBuffer.current += " " + text;
-              
-              // [실시간 데이터 고속도로] 자막 즉시 방송 및 학생 화면 동기화
               localStorage.setItem('vibe_live_transcript', JSON.stringify({ 
                 text, 
                 timestamp: Date.now(),
@@ -63,65 +54,47 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
               }));
               onLiveTextUpdate(text);
             }
-          } catch (e) {
-            console.error("데이터 파싱 오류:", e);
-          }
+          } catch (e) {}
         };
 
         socket.onclose = () => {
-          console.warn("⚠️ Moonshine 서버와 연결이 종료되었습니다. 재연결을 시도합니다...");
-          reconnectTimer = setTimeout(startMoonshineSession, 3000); // 3초 후 재연결
+          reconnectTimer = setTimeout(startMoonshineSession, 3000);
         };
-
-        socket.onerror = (error) => {
-          console.error("Moonshine 엔진 에러:", error);
-        };
-
       } catch (err) {
-        console.error("마이크 접근 또는 소켓 초기화 실패:", err);
-        alert("음성 인식 엔진을 시작할 수 없습니다. 마이크 권한을 확인하세요.");
+        console.error("STT 연결 실패");
       }
     };
 
     startMoonshineSession();
-
     return () => {
-      if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+      if (mediaRecorder) mediaRecorder.stop();
       if (socket) socket.close();
       if (reconnectTimer) clearTimeout(reconnectTimer);
     };
   }, [isStarted, onLiveTextUpdate]);
 
-  // 실시간 AI 조언 생성
+  // [실전 강의 모드] 음성 데이터를 기반으로 실시간 강의 맥락 자동 갱신
   useEffect(() => {
     if (!isStarted) return;
-    const requestInsight = async () => {
-      const currentTranscript = transcriptBuffer.current.trim();
-      if (!currentTranscript && misunderstandingCount === 0) return;
-      
+
+    const refreshContextFromSpeech = async () => {
+      const currentSpeech = transcriptBuffer.current.trim();
+      if (currentSpeech.length < 300) return; 
+
       try {
-        const response = await fetch("/insight", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            transcript: currentTranscript.substring(currentTranscript.length - 1500),
-            wordClicks, 
-            misunderstandingCount, 
-            studentCount,
-            topic: analyzedSummary?.topic
-          })
-        });
-        if (response.ok) {
-          const insight = await response.json();
-          setAiInsights(prev => [insight, ...prev].slice(0, 3));
-          localStorage.setItem('vibe_bridge_live_insight', JSON.stringify(insight));
-          transcriptBuffer.current = currentTranscript.substring(currentTranscript.length - 200);
+        console.log("📝 [Vibe Bridge] 실제 강의 음성을 바탕으로 맥락 최신화 중...");
+        const newSummary = await callAnalyzeAPI(currentSpeech);
+        if (newSummary) {
+          localStorage.setItem('vibe_lecture_data', JSON.stringify(newSummary));
+          setAnalyzedSummary(newSummary);
         }
       } catch (err) {}
     };
-    const interval = setInterval(requestInsight, 30000); 
+
+    // 2분마다 실제 발화 내용을 분석하여 학생용 대시보드 갱신
+    const interval = setInterval(refreshContextFromSpeech, 120000);
     return () => clearInterval(interval);
-  }, [isStarted, wordClicks, misunderstandingCount, studentCount, analyzedSummary]);
+  }, [isStarted]);
 
   const extractTextFromPDF = async (arrayBuffer) => {
     const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer, useSystemFonts: true });
@@ -138,60 +111,30 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
 
   /**
    * [파싱 오류 수리 및 데이터 추출 강화]
-   * AI 응답에서 JSON 데이터만 정확히 뽑아내고, 에러 원인을 세분화하여 기록합니다.
    */
   const callAnalyzeAPI = async (textContent) => {
     const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
+    if (!API_KEY) return null;
 
-    if (!API_KEY) {
-      console.error("🚨 [Vibe Bridge] API 키 누락");
-      alert("AI 설정을 위한 API 키가 등록되지 않았습니다.");
-      return null;
-    }
-
-    // [지시문 엄격화] 인사말 및 부연 설명 차단
     const universalPrompt = `당신은 전 학문 분야의 강의 자료를 정교하게 구조화하는 범용 교육 조력자 AI입니다. 
-    제공된 강의 자료를 정밀 분석하여 학생들을 위한 구조적 요약본을 생성하세요. 
-    
-    [응답 규칙 - 매우 중요]
-    1. 인사말, 추가 설명, 마크다운 기호 없이 오직 순수 JSON 데이터만 출력하세요.
-    2. 내용이 부족하더라도 형식을 맞춘 빈 JSON({ "topic": "", ... })이라도 출력하세요.
-    3. 반드시 다음 JSON 형식으로만 응답하세요: 
-    { "topic": "강의 주제", "keyPoints": ["핵심1", "핵심2", "학술적근거1", "학술적근거2"], "summary": "구조적 3줄 요약" }`;
+    반드시 다음 JSON 형식으로만 응답하세요:
+    { "topic": "강의 주제", "keyPoints": ["핵심1", "핵심2", "학술적근거1", "학술적근거2"], "summary": "구조적 3줄 요약" }
+    [주의] 인사말 없이 오직 JSON 데이터만 출력하세요.`;
 
     try {
       const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=${API_KEY}`;
-      
       const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: `${universalPrompt}\n\n분석할 내용:\n${textContent.substring(0, 12000)}` }] }]
-        })
+        body: JSON.stringify({ contents: [{ parts: [{ text: `${universalPrompt}\n\n내용:\n${textContent.substring(0, 12000)}` }] }] })
       });
-
-      if (!response.ok) {
-        console.error(`🌐 [Network Error] 서버 응답 실패 (Status: ${response.status})`);
-        throw new Error("네트워크 연결 또는 서버 상태를 확인하세요.");
-      }
 
       const data = await response.json();
       const aiResultText = data.candidates[0].content.parts[0].text;
-      
-      // [정밀 추출] 텍스트 내에서 처음과 끝 중괄호 { } 사이의 내용만 추출
       const jsonRegex = /\{[\s\S]*\}/;
       const match = aiResultText.match(jsonRegex);
-      
-      if (!match) {
-        console.error("🔍 [Parsing Error] 응답에서 JSON 데이터를 찾을 수 없습니다. (원문: " + aiResultText + ")");
-        throw new Error("데이터 추출 실패");
-      }
-
-      return JSON.parse(match[0].trim());
-      
+      return match ? JSON.parse(match[0].trim()) : null;
     } catch (err) {
-      console.error("🚨 [Vibe Bridge] 최종 오류:", err.message);
-      alert("분석 결과를 불러오는 중 오류가 발생했습니다: " + err.message);
       return null;
     }
   };
@@ -200,43 +143,25 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
     const file = e.target.files[0];
     if (!file) return;
     setIsUploading(true);
-    setAnalysisProgress(10);
-    
     try {
       let textContent = file.type === "application/pdf" ? await extractTextFromPDF(await file.arrayBuffer()) : await file.text();
       setAnalysisProgress(60);
-      
       const summary = await callAnalyzeAPI(textContent);
-      
-      if (!summary) {
-        setIsUploading(false);
-        return;
+      if (summary) {
+        localStorage.setItem('vibe_lecture_data', JSON.stringify(summary));
+        setAnalyzedSummary(summary);
+        setAnalysisProgress(100);
+        setIsAnalyzed(true);
       }
-      
-      // [데이터 실시간 동기화] vibe_lecture_data 키를 사용하여 학생 대시보드와 공유
-      localStorage.setItem('vibe_lecture_data', JSON.stringify({
-        topic: summary.topic,
-        keyPoints: summary.keyPoints,
-        summary: summary.summary
-      }));
-      
-      setAnalyzedSummary(summary);
-      setAnalysisProgress(100);
       setIsUploading(false);
-      setIsAnalyzed(true);
     } catch (err) {
-      alert("문서 읽기 오류: " + err.message);
       setIsUploading(false);
     }
   };
 
   const handleStartLecture = () => {
     if (!analyzedSummary) return;
-    onStart({ 
-      topic: analyzedSummary.topic, 
-      keyPoints: analyzedSummary.keyPoints, 
-      summary: analyzedSummary.summary 
-    });
+    onStart({ topic: analyzedSummary.topic, keyPoints: analyzedSummary.keyPoints, summary: analyzedSummary.summary });
   };
 
   if (!isStarted) {
@@ -245,9 +170,9 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
         <AnimatePresence mode="wait">
           {!isUploading && !isAnalyzed ? (
             <motion.div key="upload" className="max-w-md space-y-6">
-              <div className="w-20 h-20 bg-indigo-50 rounded-full flex items-center justify-center mx-auto text-3xl">📊</div>
-              <h2 className="text-2xl font-bold text-slate-800">강의 자료 스마트 분석</h2>
-              <p className="text-slate-500 text-sm">자료를 올리면 AI가 즉시 핵심 맥락을 추출하여 배포합니다.</p>
+              <div className="w-20 h-20 bg-indigo-50 rounded-full flex items-center justify-center mx-auto text-3xl">📡</div>
+              <h2 className="text-2xl font-bold text-slate-800">강의실 준비 완료</h2>
+              <p className="text-slate-500 text-sm">자료를 올리면 실시간 AI 분석 시스템이 활성화됩니다.</p>
               <label className="block w-full py-4 bg-indigo-600 text-white font-bold rounded-2xl cursor-pointer hover:bg-indigo-700 shadow-lg transition-all active:scale-[0.98]">
                 자료 선택 및 분석 시작
                 <input type="file" className="hidden" accept=".pdf,.txt,.md" onChange={handleFileChange} />
@@ -255,17 +180,17 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
             </motion.div>
           ) : isUploading ? (
             <motion.div key="analyzing" className="max-w-md w-full space-y-8">
-              <h2 className="text-xl font-bold text-slate-800">AI가 문맥을 파악하고 있습니다...</h2>
+              <h2 className="text-xl font-bold text-slate-800">강의 맥락을 분석 중입니다...</h2>
               <div className="w-full bg-slate-100 h-3 rounded-full overflow-hidden"><motion.div initial={{ width: 0 }} animate={{ width: `${analysisProgress}%` }} className="h-full bg-indigo-500" /></div>
             </motion.div>
           ) : (
             <motion.div key="complete" className="max-w-md space-y-8">
               <div className="w-20 h-20 bg-emerald-50 rounded-full flex items-center justify-center mx-auto text-3xl">✨</div>
               <div className="space-y-2">
-                <h2 className="text-2xl font-bold text-slate-800">분석 및 동기화 완료</h2>
+                <h2 className="text-2xl font-bold text-slate-800">준비 완료</h2>
                 <p className="text-sm text-slate-500 font-bold">주제: {analyzedSummary?.topic}</p>
               </div>
-              <button onClick={handleStartLecture} className="w-full py-4 bg-slate-900 text-white font-bold rounded-2xl shadow-xl hover:bg-slate-800 transition-all">실시간 세션 시작하기</button>
+              <button onClick={handleStartLecture} className="w-full py-4 bg-slate-900 text-white font-bold rounded-2xl shadow-xl hover:bg-slate-800 transition-all">실시간 강의 시작하기</button>
             </motion.div>
           )}
         </AnimatePresence>
@@ -277,14 +202,22 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
     <div className="h-full flex flex-col gap-4 overflow-hidden">
       <div className="h-16 flex-shrink-0 flex items-center justify-between px-6 bg-white rounded-2xl border border-slate-100 shadow-sm">
         <div className="flex gap-8">
-          <div className="flex flex-col"><span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Listening</span><span className="text-xs font-black text-emerald-500 flex items-center gap-1.5"><span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping"></span> STT Live</span></div>
-          <div className="flex flex-col"><span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Audience</span><span className="text-xs font-black text-slate-700">{studentCount}명 참여 중</span></div>
+          <div className="flex flex-col">
+            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Mic Status</span>
+            <span className="text-xs font-black text-emerald-500 flex items-center gap-1.5">
+              <div className="flex gap-0.5 items-center h-3">
+                {[1,2,3,4,5].map(i => <motion.div key={i} animate={{ height: [4, 12, 4] }} transition={{ duration: 0.5, repeat: Infinity, delay: i*0.1 }} className="w-0.5 bg-emerald-500" />)}
+              </div>
+              Live Streaming
+            </span>
+          </div>
+          <div className="flex flex-col"><span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Audience</span><span className="text-xs font-black text-slate-700">{studentCount}명 청강 중</span></div>
         </div>
         <div className="bg-indigo-50 px-4 py-2 rounded-xl text-indigo-600 text-xs font-bold uppercase tracking-tighter">AI Real-time Monitoring Active</div>
       </div>
       <div className="flex-1 flex gap-4 min-h-0 overflow-hidden">
         <section className="flex-[3] bg-white rounded-3xl border border-slate-100 p-6 flex flex-col min-h-0 shadow-sm">
-          <h3 className="text-[10px] font-black text-slate-400 uppercase mb-6 tracking-widest">실시간 용어 히트맵</h3>
+          <h3 className="text-[10px] font-black text-slate-400 uppercase mb-6 tracking-widest">실시간 집중 키워드</h3>
           <div className="flex-1 overflow-y-auto space-y-5 pr-2">
             {Object.entries(wordClicks).map(([word, count]) => (
               <div key={word} className="space-y-1.5">
@@ -295,9 +228,9 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
           </div>
         </section>
         <section className="flex-[3] bg-white rounded-3xl border border-slate-100 p-6 flex flex-col min-h-0 shadow-sm text-center justify-center">
-          <h3 className="text-[10px] font-black text-slate-400 uppercase mb-6 tracking-widest">학생 이해도 현황</h3>
+          <h3 className="text-[10px] font-black text-slate-400 uppercase mb-6 tracking-widest">강의 이해도 지수</h3>
           <div className="text-5xl font-black text-slate-800 mb-2">{misunderstandingRatio}%</div>
-          <div className="text-[10px] text-rose-500 font-bold uppercase tracking-tighter">도움 필요 지표: {misunderstandingCount}건</div>
+          <div className="text-[10px] text-rose-500 font-bold uppercase tracking-tighter">도움 요청: {misunderstandingCount}건</div>
         </section>
         <section className="flex-[4] bg-slate-900 rounded-3xl p-6 flex flex-col min-h-0 text-white shadow-2xl relative overflow-hidden">
           <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full blur-3xl -mr-10 -mt-10"></div>
@@ -307,7 +240,7 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
               {aiInsights.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center opacity-30 text-center py-10">
                   <span className="text-3xl mb-4">🧠</span>
-                  <p className="text-[10px] font-medium tracking-tight uppercase">교수님 음성과 피드백을 기반으로<br/>AI가 실시간 분석 중입니다.</p>
+                  <p className="text-[10px] font-medium tracking-tight uppercase">교수님 음성을 실시간 분석하여<br/>강의 가이드를 생성합니다.</p>
                 </div>
               ) : (
                 aiInsights.map((ins, i) => (
