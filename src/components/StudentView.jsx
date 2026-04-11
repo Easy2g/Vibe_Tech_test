@@ -22,12 +22,10 @@ export default function StudentView({ onWordClick, lastActivity, onTempoChange, 
       if (savedSummary) {
         try {
           const parsed = JSON.parse(savedSummary);
-          setLocalSummary({
-            topic: parsed.topic || "분석된 주제",
-            keyPoints: parsed.keyPoints || [],
-            summary: parsed.summary || ""
-          });
-        } catch (e) {}
+          setLocalSummary(parsed);
+        } catch (e) {
+          console.error("Summary Sync Error:", e);
+        }
       }
 
       // 2. 실시간 AI 조언 로드
@@ -54,6 +52,19 @@ export default function StudentView({ onWordClick, lastActivity, onTempoChange, 
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [liveText]);
 
+  // [방어 코드] 강의 정보가 아예 없으면 로딩 화면 표시
+  if (!lectureContext && !localSummary) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center bg-white rounded-[3rem] border border-slate-100 shadow-sm p-12 text-center">
+        <div className="w-20 h-20 bg-indigo-50 rounded-full flex items-center justify-center mb-6 animate-bounce">
+          <span className="text-3xl">📡</span>
+        </div>
+        <h2 className="text-2xl font-black text-slate-800 mb-2">강의 데이터를 연결 중입니다</h2>
+        <p className="text-slate-500 font-medium">교수님이 세션을 시작하시면 자동으로 화면이 전환됩니다.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="flex gap-6 h-full overflow-hidden bg-slate-50">
       
@@ -70,7 +81,7 @@ export default function StudentView({ onWordClick, lastActivity, onTempoChange, 
           <div ref={scrollRef} className="flex-1 overflow-y-auto pr-2 scroll-smooth relative z-10">
             <div className="flex flex-wrap gap-x-2 gap-y-3 items-baseline py-4">
               {liveText ? (
-                liveText.split(' ').map((word, idx) => (
+                String(liveText).split(' ').map((word, idx) => (
                   <motion.button
                     key={idx}
                     initial={{ opacity: 0, y: 5 }}
@@ -111,7 +122,7 @@ export default function StudentView({ onWordClick, lastActivity, onTempoChange, 
           <div className="space-y-1">
             <p className="text-[10px] font-bold text-slate-400 uppercase">Today's Topic</p>
             <p className="text-lg font-black text-slate-800 leading-tight">
-              {localSummary ? localSummary.topic : "데이터를 수신 중입니다..."}
+              {(localSummary || lectureContext)?.topic || "데이터를 수신 중입니다..."}
             </p>
           </div>
         </div>
@@ -120,8 +131,8 @@ export default function StudentView({ onWordClick, lastActivity, onTempoChange, 
           <div className="space-y-3">
             <p className="text-[10px] font-bold text-slate-400 uppercase">Core Keywords</p>
             <div className="flex flex-col gap-2">
-              {localSummary && localSummary.keyPoints.length > 0 ? (
-                localSummary.keyPoints.map((kp, i) => (
+              {(localSummary || lectureContext)?.keyPoints?.length > 0 ? (
+                (localSummary || lectureContext).keyPoints.map((kp, i) => (
                   <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} key={i} className="p-3 bg-white border border-slate-100 rounded-xl text-[11px] font-bold text-slate-600 shadow-sm">
                     # {kp}
                   </motion.div>
@@ -133,9 +144,9 @@ export default function StudentView({ onWordClick, lastActivity, onTempoChange, 
           </div>
           
           {/* 요약본 표시 */}
-          {localSummary && localSummary.summary && (
+          {(localSummary || lectureContext)?.summary && (
             <div className="p-4 bg-indigo-50 rounded-2xl text-indigo-800 text-[11px] leading-relaxed font-medium">
-              {localSummary.summary}
+              {(localSummary || lectureContext).summary}
             </div>
           )}
 
@@ -162,7 +173,7 @@ export default function StudentView({ onWordClick, lastActivity, onTempoChange, 
       </div>
 
       <AnimatePresence>
-        {selectedWord && <WordExplanationModal word={selectedWord} lectureContext={{ topic: localSummary?.topic }} onClose={() => setSelectedWord(null)} />}
+        {selectedWord && <WordExplanationModal word={selectedWord} lectureContext={{ topic: (localSummary || lectureContext)?.topic }} onClose={() => setSelectedWord(null)} />}
       </AnimatePresence>
     </div>
   );
