@@ -17,10 +17,21 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
 
   const misunderstandingRatio = studentCount > 0 ? Math.round((misunderstandingCount / studentCount) * 100) : 0;
 
+  // [탭 간 실시간 통신] 자막 전용 브로드캐스트 채널 생성
+  const subtitleChannel = useMemo(() => new BroadcastChannel('vibe_subtitle_channel'), []);
+
   // [배포용 브라우저 내장 STT 및 자동 복구 로직]
-  // 서버 없이도 마이크 입력을 텍스트로 변환하며, 침묵 시 자동으로 인식을 재개합니다.
   useEffect(() => {
     if (!isStarted || !('webkitSpeechRecognition' in window)) return;
+
+    // 다른 탭에서 방송된 자막 수신 리스너
+    subtitleChannel.onmessage = (event) => {
+      const { text, isFinal } = event.data;
+      if (text && isFinal) {
+        // 다른 탭(교수 모드 등)에서 생성된 자막을 내 화면에도 즉시 반영
+        onLiveTextUpdate(text);
+      }
+    };
 
     const recognition = new window.webkitSpeechRecognition();
     recognition.continuous = true;
@@ -35,7 +46,10 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
           currentText += text;
           transcriptBuffer.current += " " + text;
           
-          // [실시간 데이터 전파] 학생용 자막 동기화
+          // [탭 간 자막 방송] 실시간으로 다른 탭들에 자막 데이터 전송
+          subtitleChannel.postMessage({ text, isFinal: true, timestamp: Date.now() });
+
+          // [실시간 데이터 전파] 로컬 저장소 백업 및 UI 업데이트
           localStorage.setItem('vibe_live_transcript', JSON.stringify({ 
             text, 
             timestamp: Date.now(),
@@ -47,13 +61,11 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
     };
 
     recognition.onerror = (event) => {
-      // 'no-speech' 에러는 강의 중 발생하는 자연스러운 현상이므로 무시하고 재시작 유도
       if (event.error === 'no-speech') return;
       console.error("STT 에러 발생:", event.error);
     };
 
     recognition.onend = () => { 
-      // 강의가 진행 중일 경우 엔진이 꺼지면 즉시 다시 켬 (무한 루프)
       if (isStarted) {
         try { recognition.start(); } catch(e) {}
       } 
@@ -65,8 +77,9 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
     return () => { 
       recognition.onend = null; 
       recognition.stop(); 
+      subtitleChannel.close(); // 채널 닫기
     };
-  }, [isStarted, onLiveTextUpdate]);
+  }, [isStarted, onLiveTextUpdate, subtitleChannel]);
 
   // [실전 강의 모드] 음성 데이터를 기반으로 2분마다 실시간 강의 맥락 자동 갱신
   useEffect(() => {

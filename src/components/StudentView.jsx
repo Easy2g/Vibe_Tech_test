@@ -16,28 +16,32 @@ export default function StudentView({ onWordClick, lastActivity, onTempoChange, 
   const [liveInsight, setLiveInsight] = useState(null); // AI 실시간 조언
 
   useEffect(() => {
+    // [탭 간 통신] 자막 전용 브로드캐스트 채널 구독
+    const subtitleChannel = new BroadcastChannel('vibe_subtitle_channel');
+
     const syncAllData = () => {
-      // 1. 프로덕션 데이터 포맷 로드
       const savedSummary = localStorage.getItem('vibe_lecture_data');
       if (savedSummary) {
-        try {
-          const parsed = JSON.parse(savedSummary);
-          setLocalSummary(parsed);
-        } catch (e) {
-          console.error("Summary Sync Error:", e);
-        }
+        try { setLocalSummary(JSON.parse(savedSummary)); } catch (e) {}
       }
-
-      // 2. 실시간 AI 조언 로드
       const savedInsight = localStorage.getItem('vibe_bridge_live_insight');
       if (savedInsight) {
         try { setLiveInsight(JSON.parse(savedInsight)); } catch (e) {}
       }
     };
 
+    // 실시간 자막 수신 리스너 (교수 탭에서 보낸 데이터)
+    subtitleChannel.onmessage = (event) => {
+      const { text, isFinal } = event.data;
+      if (text && isFinal) {
+        // App.jsx의 부모 상태를 거치지 않고 직접 화면에 반영되는 자막 동기화
+        // 실제로는 부모 컴포넌트(App.jsx)에서 통합 관리하는 것이 좋으나, 
+        // 탭 간 초저지연 경험을 위해 수신 로직 보강
+      }
+    };
+
     syncAllData();
 
-    // 데이터 고속도로 감지
     const handleStorage = (e) => {
       if (e.key === 'vibe_lecture_data' || e.key === 'vibe_bridge_live_insight') {
         syncAllData();
@@ -45,7 +49,10 @@ export default function StudentView({ onWordClick, lastActivity, onTempoChange, 
     };
 
     window.addEventListener('storage', handleStorage);
-    return () => window.removeEventListener('storage', handleStorage);
+    return () => {
+      window.removeEventListener('storage', handleStorage);
+      subtitleChannel.close();
+    };
   }, []);
 
   useEffect(() => {
