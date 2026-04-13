@@ -216,10 +216,10 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
   const extractTextFromPDF = async (arrayBuffer) => {
     const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer, useSystemFonts: true });
     const pdf = await loadingTask.promise;
-    const totalPages = Math.min(pdf.numPages, 20);
+    const totalPages = pdf.numPages; // 페이지 제한 해제 (전체 페이지 대상)
 
-    let fullText = "";
-    const imagePages = []; // 텍스트 부족한 페이지는 이미지로 따로 수집
+    let sampledFullText = "";
+    const imagePages = []; // 텍스트 부족한 페이지는 이미지로 최소 수집
 
     for (let i = 1; i <= totalPages; i++) {
       const page = await pdf.getPage(i);
@@ -230,21 +230,22 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
         .filter(str => str.trim().length > 0)
         .join(" ");
 
-      if (pageText.trim().length >= 30) {
-        // 텍스트가 충분하면 그대로 사용
-        fullText += `[${i}페이지]\n${pageText}\n\n`;
-      } else {
-        // 텍스트가 부족하면 canvas로 렌더링해서 이미지 수집
+      // [스마트 샘플링] 페이지당 앞부분 300자만 추출하여 토큰 절약
+      if (pageText.trim().length >= 20) {
+        sampledFullText += `[${i}P] ${pageText.substring(0, 300)}...\n\n`;
+      } else if (imagePages.length < 2) {
+        // 텍스트가 거의 없는 '이미지 슬라이드'는 딱 2장까지만, 저해상도로 수집
         try {
-          const viewport = page.getViewport({ scale: 1.5 });
+          const viewport = page.getViewport({ scale: 0.6 }); // 해상도 낮춤
           const canvas = document.createElement("canvas");
           canvas.width = viewport.width;
           canvas.height = viewport.height;
           const ctx = canvas.getContext("2d");
           await page.render({ canvasContext: ctx, viewport }).promise;
-          const base64 = canvas.toDataURL("image/jpeg", 0.85).split(",")[1];
+          // 품질 0.5로 대폭 압축하여 토큰 소모 최소화
+          const base64 = canvas.toDataURL("image/jpeg", 0.5).split(",")[1];
           imagePages.push({ pageNum: i, base64 });
-          fullText += `[${i}페이지: 이미지 슬라이드]\n`;
+          sampledFullText += `[${i}P: 이미지 슬라이드 분석 필요]\n`;
         } catch (err) {
           console.warn(`[PDF] ${i}페이지 이미지 렌더링 실패:`, err);
         }
@@ -253,11 +254,10 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
       setAnalysisProgress(Math.floor((i / totalPages) * 40) + 10);
     }
 
-    return { fullText, imagePages };
+    return { fullText: sampledFullText, imagePages };
   };
 
   const callAnalyzeAPI = async (input) => {
-    // 텍스트만 들어오면 (refreshContextFromSpeech 대응) 객체로 변환
     const { fullText, imagePages } = typeof input === 'string' 
       ? { fullText: input, imagePages: [] } 
       : input;
@@ -265,49 +265,29 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
     const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
     if (!API_KEY) return null;
 
-    // 텍스트 균등 샘플링 (앞/중간/뒤 4000자씩)
-    const totalLen = fullText.length;
-    const chunkSize = 4000;
-    const front = fullText.substring(0, chunkSize);
-    const middle = fullText.substring(
-      Math.floor(totalLen / 2) - chunkSize / 2,
-      Math.floor(totalLen / 2) + chunkSize / 2
-    );
-    const back = fullText.substring(totalLen - chunkSize);
-    const sampledText = [front, middle, back]
-      .filter(chunk => chunk.trim().length > 0)
-      .join("\n\n[...중략...]\n\n");
+    // 이미 샘플링된 텍스트이므로 전체를 사용하되 안전하게 최대 15,000자로 제한
+    const sampledText = fullText.length > 15000 ? fullText.substring(0, 15000) : fullText;
 
     const systemPrompt = `당신은 강의 자료를 분석하는 교육 AI입니다.
-아래는 실제 강의 자료의 내용입니다. 반드시 아래 내용에만 근거하여 분석하고, 내용에 없는 것은 절대 추가하지 마세요.
-반드시 다음 JSON 형식으로만 응답하세요. 인사말, 설명, 마크다운 코드블록 없이 오직 JSON { } 만 출력하세요:
+아래는 강의 자료 각 페이지에서 추출한 핵심 내용 샘플입니다. 전체 맥락을 파악하여 분석하세요.
+반드시 다음 JSON 형식으로만 응답하고, 내용에 없는 것은 절대 추가하지 마세요.
 {
   "topic": "강의 자료에서 파악한 핵심 주제 (1문장)",
   "keyPoints": ["핵심 개념 1", "핵심 개념 2", "핵심 개념 3", "핵심 개념 4"],
   "summary": "강의 자료 내용 기반 3줄 요약 (내용에 없는 것 추가 금지)"
 }`;
 
-    // Gemini API 멀티모달 content 구성
-    // 텍스트 파트
     const parts = [
-      { text: `${systemPrompt}\n\n[강의 자료 텍스트]\n${sampledText}` }
+      { text: `${systemPrompt}\n\n[강의 자료 샘플링 텍스트]\n${sampledText}` }
     ];
 
-    // 이미지 슬라이드가 있으면 최대 5장 추가 (API 토큰 절약)
-    const imagesToSend = imagePages.slice(0, 5);
+    // 이미지는 딱 2장만 전송 (토큰 절약 극대화)
+    const imagesToSend = imagePages.slice(0, 2);
     for (const { pageNum, base64 } of imagesToSend) {
-      parts.push({
-        text: `\n[${pageNum}페이지 슬라이드 이미지]`
-      });
-      parts.push({
-        inline_data: {
-          mime_type: "image/jpeg",
-          data: base64
-        }
-      });
+      parts.push({ text: `\n[${pageNum}P 슬라이드 이미지]` });
+      parts.push({ inline_data: { mime_type: "image/jpeg", data: base64 } });
     }
 
-    // 최대 2회 재시도
     for (let attempt = 1; attempt <= 2; attempt++) {
       try {
         const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${API_KEY}`;
@@ -318,7 +298,7 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
             contents: [{ parts }],
             generationConfig: {
               maxOutputTokens: 500,
-              temperature: 0.1  // 낮은 temperature → 창작 억제, 사실 기반 응답
+              temperature: 0.1
             }
           })
         });
@@ -326,28 +306,23 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
         if (!response.ok) {
           console.warn(`[PDF 분석] API 오류 ${response.status} (시도 ${attempt}/2)`);
           if (attempt === 2) return null;
-          await new Promise(r => setTimeout(r, 2000)); // 2초 대기 후 재시도
+          await new Promise(r => setTimeout(r, 2000));
           continue;
         }
 
         const data = await response.json();
         const aiResultText = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
 
-        // JSON 추출 (```json 블록 포함 대응)
         const jsonRegex = /\{[\s\S]*\}/;
         const match = aiResultText.match(jsonRegex);
         if (!match) {
-          console.warn(`[PDF 분석] JSON 추출 실패 (시도 ${attempt}/2):`, aiResultText);
           if (attempt === 2) return null;
           await new Promise(r => setTimeout(r, 1000));
           continue;
         }
 
         const parsed = JSON.parse(match[0].trim());
-
-        // 파싱 결과 검증 — topic이 없거나 비어있으면 재시도
         if (!parsed.topic || parsed.topic.trim().length < 2) {
-          console.warn(`[PDF 분석] topic 누락 (시도 ${attempt}/2)`);
           if (attempt === 2) return null;
           continue;
         }
@@ -355,7 +330,6 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
         return parsed;
 
       } catch (err) {
-        console.warn(`[PDF 분석] 예외 발생 (시도 ${attempt}/2):`, err);
         if (attempt === 2) return null;
         await new Promise(r => setTimeout(r, 1000));
       }
