@@ -20,6 +20,12 @@ export default function App() {
   const [lectureTempo, setLectureTempo] = useState({ value: '적당' });
   const [lastActivity, setLastActivity] = useState(Date.now());
 
+  // 교수 세션 상태 (localStorage 복원)
+  const [teacherSession, setTeacherSession] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("teacherSession") || "null"); }
+    catch { return null; }
+  });
+
   useEffect(() => {
     if (!lectureCode) return;
     const sessionPath = `sessions/${lectureCode}`;
@@ -62,9 +68,15 @@ export default function App() {
   const handleRoleSelect = (selectedRole, data) => {
     setRole(selectedRole);
     if (data) {
-      if (data.code) setLectureCode(data.code);
-      if (data.name) setTeacherName(data.name);
-      if (selectedRole === 'student' && data.code) {
+      if (selectedRole === 'teacher') {
+        // TeacherAuthModal 성공 시 넘어오는 데이터 (teacherId, teacherName, teacherCode)
+        setTeacherSession(data);
+        setTeacherName(data.teacherName);
+        // 교수 로그인 시 6자리 랜덤 강의코드를 자동 생성하여 대시보드 진입
+        const randomCode = Math.floor(100000 + Math.random() * 900000).toString();
+        setLectureCode(randomCode);
+      } else {
+        if (data.code) setLectureCode(data.code);
         const studentId = `std_${Date.now()}`;
         set(ref(db, `sessions/${data.code}/students/${studentId}`), { joinedAt: Date.now() });
       }
@@ -72,10 +84,27 @@ export default function App() {
     }
   };
 
+  const handleTeacherLogout = () => {
+    localStorage.removeItem("teacherSession");
+    setTeacherSession(null);
+    handleExit();
+  };
+
   const handleStartLecture = (context) => {
     const fullContext = { ...context, code: lectureCode };
     set(ref(db, `sessions/${lectureCode}/status`), { isStarted: true });
     set(ref(db, `sessions/${lectureCode}/lectureData`), fullContext);
+    
+    // 학생 구독을 위한 강의 정보 저장
+    set(ref(db, `sessions/${lectureCode}/info`), {
+      teacherId: teacherSession?.teacherId || "unknown",
+      teacherName: teacherSession?.teacherName || "교수",
+      teacherCode: teacherSession?.teacherCode || "",
+      topic: fullContext.topic || "강의 진행 중",
+      isActive: true,
+      startedAt: Date.now(),
+    });
+
     setLectureContext(fullContext);
     setIsLectureStarted(true);
   };
@@ -112,8 +141,10 @@ export default function App() {
     broadcastFeedback({ misunderstandingCount: newCount });
   };
 
-  const handleExit = () => {
+  const handleExit = async () => {
     if (role === 'teacher' && lectureCode) {
+      // 강의 종료 시 isActive false 처리 후 데이터 삭제 (또는 유지)
+      await set(ref(db, `sessions/${lectureCode}/info/isActive`), false);
       remove(ref(db, `sessions/${lectureCode}`));
     }
     setRole(null);
@@ -141,9 +172,25 @@ export default function App() {
           )}
         </div>
         <div className="flex items-center gap-4">
+          {teacherSession && role === 'teacher' && (
+            <div className="flex items-center gap-3 border-r border-slate-100 pr-4 mr-2">
+              <div className="text-right">
+                <p className="text-xs font-bold text-slate-700">{teacherSession.teacherName} 교수님</p>
+                <p className="text-[10px] text-slate-400 font-medium">
+                  교수코드: <span className="font-black text-indigo-500 tracking-widest">{teacherSession.teacherCode}</span>
+                </p>
+              </div>
+              <button
+                onClick={handleTeacherLogout}
+                className="text-[10px] font-bold text-slate-400 hover:text-rose-500 hover:bg-rose-50 px-2 py-1 rounded-lg transition-colors"
+              >
+                로그아웃
+              </button>
+            </div>
+          )}
           <div className="text-right hidden sm:block">
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Session User</p>
-            <p className="text-xs font-bold text-slate-700">{role === 'teacher' ? `👨‍🏫 ${teacherName} 교수` : '👨‍🎓 학생'}</p>
+            <p className="text-xs font-bold text-slate-700">{role === 'teacher' ? '👨‍🏫 교수 대시보드' : '👨‍🎓 학생 View'}</p>
           </div>
           <button onClick={handleExit} className="text-[11px] font-bold bg-slate-100 text-slate-500 hover:bg-rose-50 hover:text-rose-600 px-4 py-2 rounded-xl transition-all active:scale-[0.98]">강의 종료</button>
         </div>
