@@ -216,13 +216,26 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
   const extractTextFromPDF = async (arrayBuffer) => {
     const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer, useSystemFonts: true });
     const pdf = await loadingTask.promise;
+    const totalPages = Math.min(pdf.numPages, 20);
     let fullText = "";
-    for (let i = 1; i <= Math.min(pdf.numPages, 20); i++) {
+
+    for (let i = 1; i <= totalPages; i++) {
       const page = await pdf.getPage(i);
       const content = await page.getTextContent();
-      fullText += content.items.map(item => item.str).join(" ") + "\n";
-      setAnalysisProgress(Math.floor((i / Math.min(pdf.numPages, 20)) * 40) + 10);
+
+      // 빈 문자열, 공백만 있는 항목 제거 후 join
+      const pageText = content.items
+        .map(item => item.str)
+        .filter(str => str.trim().length > 0)
+        .join(" ");
+
+      if (pageText.trim()) {
+        fullText += `[${i}페이지]\n${pageText}\n\n`;
+      }
+
+      setAnalysisProgress(Math.floor((i / totalPages) * 40) + 10);
     }
+
     return fullText;
   };
 
@@ -230,46 +243,125 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
     const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
     if (!API_KEY) return null;
 
-    const universalPrompt = `당신은 전 학문 분야의 강의 자료를 정교하게 구조화하는 범용 교육 조력자 AI입니다. 
-    반드시 다음 JSON 형식으로만 응답하세요:
-    { "topic": "강의 주제", "keyPoints": ["핵심1", "핵심2", "학술적근거1", "학술적근거2"], "summary": "구조적 3줄 요약" }
-    [주의] 인사말이나 부연 설명은 절대 하지 말고 오직 { } 데이터만 출력하세요.`;
+    // 텍스트를 앞/중간/뒤 3등분해서 균형있게 샘플링 (총 12,000자)
+    const totalLen = textContent.length;
+    const chunkSize = 4000;
+    const front = textContent.substring(0, chunkSize);
+    const middle = textContent.substring(
+      Math.floor(totalLen / 2) - chunkSize / 2,
+      Math.floor(totalLen / 2) + chunkSize / 2
+    );
+    const back = textContent.substring(totalLen - chunkSize);
+    const sampledText = [front, middle, back]
+      .filter(chunk => chunk.trim().length > 0)
+      .join("\n\n[...중략...]\n\n");
 
-    try {
-      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${API_KEY}`;
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contents: [{ parts: [{ text: `${universalPrompt}\n\n내용:\n${textContent.substring(0, 12000)}` }] }] })
-      });
+    const universalPrompt = `당신은 강의 자료를 분석하는 교육 AI입니다.
+아래는 실제 강의 자료의 내용입니다. 반드시 아래 내용에만 근거하여 분석하고, 내용에 없는 것은 절대 추가하지 마세요.
 
-      const data = await response.json();
-      const aiResultText = data.candidates[0].content.parts[0].text;
-      const jsonRegex = /\{[\s\S]*\}/;
-      const match = aiResultText.match(jsonRegex);
-      if (!match) throw new Error("JSON 추출 실패");
-      return JSON.parse(match[0].trim());
-    } catch (err) {
-      return null;
+[강의 자료 내용]
+${sampledText}
+
+위 내용을 바탕으로 반드시 다음 JSON 형식으로만 응답하세요.
+인사말, 설명, 마크다운 코드블록 없이 오직 JSON { } 만 출력하세요:
+{
+  "topic": "강의 자료에서 파악한 핵심 주제 (1문장)",
+  "keyPoints": ["핵심 개념 1", "핵심 개념 2", "핵심 개념 3", "핵심 개념 4"],
+  "summary": "강의 자료 내용 기반 3줄 요약 (내용에 없는 것 추가 금지)"
+}`;
+
+    // 최대 2회 재시도
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${API_KEY}`;
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: universalPrompt }] }],
+            generationConfig: {
+              maxOutputTokens: 500,
+              temperature: 0.1  // 낮은 temperature → 창작 억제, 사실 기반 응답
+            }
+          })
+        });
+
+        if (!response.ok) {
+          console.warn(`[PDF 분석] API 오류 ${response.status} (시도 ${attempt}/2)`);
+          if (attempt === 2) return null;
+          await new Promise(r => setTimeout(r, 2000)); // 2초 대기 후 재시도
+          continue;
+        }
+
+        const data = await response.json();
+        const aiResultText = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+
+        // JSON 추출 (```json 블록 포함 대응)
+        const jsonRegex = /\{[\s\S]*\}/;
+        const match = aiResultText.match(jsonRegex);
+        if (!match) {
+          console.warn(`[PDF 분석] JSON 추출 실패 (시도 ${attempt}/2):`, aiResultText);
+          if (attempt === 2) return null;
+          await new Promise(r => setTimeout(r, 1000));
+          continue;
+        }
+
+        const parsed = JSON.parse(match[0].trim());
+
+        // 파싱 결과 검증 — topic이 없거나 비어있으면 재시도
+        if (!parsed.topic || parsed.topic.trim().length < 2) {
+          console.warn(`[PDF 분석] topic 누락 (시도 ${attempt}/2)`);
+          if (attempt === 2) return null;
+          continue;
+        }
+
+        return parsed;
+
+      } catch (err) {
+        console.warn(`[PDF 분석] 예외 발생 (시도 ${attempt}/2):`, err);
+        if (attempt === 2) return null;
+        await new Promise(r => setTimeout(r, 1000));
+      }
     }
+
+    return null;
   };
 
   const handleFileChange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
     setIsUploading(true);
+    setAnalysisProgress(10);
+
     try {
-      let textContent = file.type === "application/pdf" ? await extractTextFromPDF(await file.arrayBuffer()) : await file.text();
+      let textContent = "";
+      if (file.type === "application/pdf") {
+        textContent = await extractTextFromPDF(await file.arrayBuffer());
+      } else {
+        textContent = await file.text();
+      }
+
+      // 추출된 텍스트가 너무 짧으면 경고
+      if (textContent.trim().length < 100) {
+        alert("강의 자료에서 텍스트를 충분히 읽을 수 없습니다.\n이미지 기반 PDF이거나 보안 설정된 파일일 수 있습니다.\nTXT 파일로 변환 후 업로드해 주세요.");
+        setIsUploading(false);
+        return;
+      }
+
       setAnalysisProgress(60);
       const summary = await callAnalyzeAPI(textContent);
+
       if (summary) {
         setAnalyzedSummary(summary);
         setAnalysisProgress(100);
         setIsAnalyzed(true);
+      } else {
+        alert("AI 분석에 실패했습니다. 잠시 후 다시 시도해 주세요.");
       }
-      setIsUploading(false);
     } catch (err) {
-      alert("자료 분석 중 오류 발생");
+      console.error("[파일 분석] 오류:", err);
+      alert("자료 분석 중 오류 발생: " + err.message);
+    } finally {
       setIsUploading(false);
     }
   };
