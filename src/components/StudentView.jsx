@@ -43,20 +43,20 @@ export default function StudentView({ onWordClick, lastActivity, onTempoChange, 
             </h3>
           </div>
           <div ref={scrollRef} className="flex-1 overflow-y-auto pr-2 scroll-smooth relative z-10">
-            <div className="flex flex-wrap gap-x-2 gap-y-3 items-baseline py-4">
+            <div className="flex flex-wrap gap-x-2 gap-y-3 items-baseline py-4 leading-relaxed break-keep">
               {liveText ? (
                 String(liveText).split(' ').map((word, idx) => (
                   <motion.button
                     key={idx}
                     initial={{ opacity: 0, y: 5 }}
                     animate={{ opacity: 1, y: 0 }}
-                    whileHover={{ scale: 1.1, color: '#4f46e5' }}
+                    whileHover={{ scale: 1.05 }}
                     onClick={() => {
                       const cleanWord = word.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"");
                       onWordClick(cleanWord);
                       setSelectedWord(cleanWord);
                     }}
-                    className="text-xl md:text-2xl text-slate-700 font-bold leading-none break-keep transition-colors"
+                    className="text-xl md:text-2xl text-slate-700 font-bold leading-none break-keep transition-all hover:bg-indigo-100 hover:text-indigo-700 px-1 rounded duration-150"
                   >
                     {word}
                   </motion.button>

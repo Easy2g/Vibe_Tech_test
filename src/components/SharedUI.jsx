@@ -17,12 +17,14 @@ export function RoleSelection({ onSelect, lectureCode }) {
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-indigo-50 flex items-center justify-center p-4">
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-white rounded-3xl shadow-xl p-10 max-w-md w-full space-y-8 border border-slate-100 text-center">
         <div className="space-y-2">
-          <h1 className="text-4xl font-bold text-slate-800 tracking-tight">Vibe Bridge <span className="text-xs text-indigo-500 bg-indigo-50 px-2 py-1 rounded-md">PRO</span></h1>
-          <p className="text-slate-500 text-sm">데이터로 소통하는 인공지능 교육 중재 솔루션</p>
+          <h1 className="text-4xl font-black text-slate-800 tracking-tight">
+            Vibe<span className="text-indigo-500">-Tech</span>
+          </h1>
+          <p className="text-slate-400 text-sm font-medium">데이터로 소통하는 인공지능 교육 중재 솔루션</p>
         </div>
         <div className="space-y-4 pt-4">
-          <button onClick={() => handleRoleClick('student')} className="w-full py-4 bg-white border border-slate-200 rounded-2xl font-bold text-slate-700 hover:border-indigo-500 transition-all shadow-sm">👨‍🎓 학생으로 참여하기</button>
-          <button onClick={() => handleRoleClick('teacher')} className="w-full py-4 bg-indigo-600 rounded-2xl font-bold text-white hover:bg-indigo-700 transition-all shadow-lg">👨‍🏫 교수 대시보드 열기</button>
+          <button onClick={() => handleRoleClick('student')} className="w-full py-4 bg-white border border-slate-200 rounded-2xl font-bold text-slate-700 hover:border-indigo-500 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-sm">👨‍🎓 학생으로 참여하기</button>
+          <button onClick={() => handleRoleClick('teacher')} className="w-full py-4 bg-indigo-600 rounded-2xl font-bold text-white hover:bg-indigo-700 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-lg">👨‍🏫 교수 대시보드 열기</button>
         </div>
       </motion.div>
 
@@ -70,8 +72,8 @@ function TeacherLoginModal({ onClose, onLogin }) {
         </div>
 
         <div className="space-y-4">
-          <input type="text" placeholder="성함" required value={name} onChange={e => setName(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 outline-none transition-all" />
-          <input type="password" placeholder="비밀번호 (기본: 1234)" required value={pw} onChange={e => setPw(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 outline-none transition-all" />
+          <input type="text" placeholder="성함" required value={name} onChange={e => setName(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-300 outline-none transition-all" />
+          <input type="password" placeholder="비밀번호 (기본: 1234)" required value={pw} onChange={e => setPw(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-300 outline-none transition-all" />
         </div>
         <button type="submit" className="w-full py-3.5 bg-indigo-600 text-white font-bold rounded-xl shadow-lg hover:bg-indigo-700 transition-all active:scale-[0.98]">세션 열기</button>
       </motion.form>
@@ -120,7 +122,7 @@ function StudentEntryModal({ onClose, onEntry }) {
           required 
           value={inputCode} 
           onChange={e => setInputCode(e.target.value)} 
-          className="w-full px-4 py-5 text-center text-4xl font-black rounded-2xl border-2 border-slate-100 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-50 outline-none transition-all tracking-widest placeholder:text-slate-100" 
+          className="w-full px-4 py-5 text-center text-4xl font-black rounded-2xl border-2 border-slate-100 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-300 outline-none transition-all tracking-widest placeholder:text-slate-100" 
         />
         <button type="submit" className="w-full py-3.5 bg-indigo-600 text-white font-bold rounded-xl shadow-lg hover:bg-indigo-700 transition-all active:scale-[0.98]">입장하기</button>
       </motion.form>

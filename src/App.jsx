@@ -131,8 +131,7 @@ export default function App() {
       <nav className="h-16 bg-white border-b border-slate-100 px-6 flex justify-between items-center flex-shrink-0 z-50 shadow-sm">
         <div className="flex items-center gap-4">
           <h1 className="text-lg font-black text-slate-800 tracking-tight">
-            Vibe Bridge{' '}
-            <span className="text-xs font-bold text-indigo-500 ml-2 bg-indigo-50 px-2 py-0.5 rounded-md">PRO</span>
+            Vibe<span className="text-indigo-500">-Tech</span>
           </h1>
           {isConnected && (
             <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="flex items-center gap-2 bg-indigo-50 px-3 py-1 rounded-full border border-indigo-100">
@@ -146,7 +145,7 @@ export default function App() {
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Session User</p>
             <p className="text-xs font-bold text-slate-700">{role === 'teacher' ? `👨‍🏫 ${teacherName} 교수` : '👨‍🎓 학생'}</p>
           </div>
-          <button onClick={handleExit} className="text-[11px] font-bold bg-slate-100 text-slate-500 hover:bg-rose-50 hover:text-rose-600 px-4 py-2 rounded-xl transition-all">강의 종료</button>
+          <button onClick={handleExit} className="text-[11px] font-bold bg-slate-100 text-slate-500 hover:bg-rose-50 hover:text-rose-600 px-4 py-2 rounded-xl transition-all active:scale-[0.98]">강의 종료</button>
         </div>
       </nav>
       <main className="flex-1 p-6 max-w-7xl mx-auto w-full min-h-0 overflow-hidden">

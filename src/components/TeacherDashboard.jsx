@@ -439,7 +439,7 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
                 <h2 className="text-2xl font-bold text-slate-800">분석 및 동기화 완료</h2>
                 <p className="text-sm text-slate-500 font-bold">주제: {analyzedSummary?.topic}</p>
               </div>
-              <button onClick={handleStartLecture} className="w-full py-4 bg-slate-900 text-white font-bold rounded-2xl shadow-xl hover:bg-slate-800 transition-all">실시간 강의 세션 열기</button>
+              <button onClick={handleStartLecture} className="w-full py-4 bg-slate-900 text-white font-bold rounded-2xl shadow-xl hover:bg-slate-800 hover:scale-[1.02] active:scale-[0.98] transition-all">실시간 강의 세션 열기</button>
             </motion.div>
           )}
         </AnimatePresence>
