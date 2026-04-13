@@ -61,7 +61,5 @@
 
 ---
 
-## 🚀 최근 업데이트 (v1.2.0)
--   **토큰 최적화**: 100페이지 이상의 PDF도 분석 가능하도록 페이지 샘플링 로직 도입.
--   **Vision 폴백**: 텍스트 추출이 불가능한 이미지 PDF 슬라이드 인식률 대폭 향상.
--   **브랜드 리뉴얼**: Vibe Bridge에서 **Vibe-Tech**로 브랜드명 및 UI 전면 고도화.
+## 🔗 사이트 링크
+- **Vibe-Tech 바로가기**: [https://vibe-bridge.firebaseapp.com](https://vibe-bridge.firebaseapp.com)
