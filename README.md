@@ -62,4 +62,4 @@
 ---
 
 ## 🔗 사이트 링크
-- **Vibe-Tech 바로가기**: [https://vibe-bridge.firebaseapp.com](https://vibe-bridge.firebaseapp.com)
+- **Vibe-Tech 바로가기**: [https://e2ea5ac0.vibe-tech-7s5.pages.dev/](https://e2ea5ac0.vibe-tech-7s5.pages.dev/)
