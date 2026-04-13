@@ -217,58 +217,95 @@ export default function TeacherDashboard({ wordClicks, lectureTempo, isStarted, 
     const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer, useSystemFonts: true });
     const pdf = await loadingTask.promise;
     const totalPages = Math.min(pdf.numPages, 20);
+
     let fullText = "";
+    const imagePages = []; // 텍스트 부족한 페이지는 이미지로 따로 수집
 
     for (let i = 1; i <= totalPages; i++) {
       const page = await pdf.getPage(i);
       const content = await page.getTextContent();
 
-      // 빈 문자열, 공백만 있는 항목 제거 후 join
       const pageText = content.items
         .map(item => item.str)
         .filter(str => str.trim().length > 0)
         .join(" ");
 
-      if (pageText.trim()) {
+      if (pageText.trim().length >= 30) {
+        // 텍스트가 충분하면 그대로 사용
         fullText += `[${i}페이지]\n${pageText}\n\n`;
+      } else {
+        // 텍스트가 부족하면 canvas로 렌더링해서 이미지 수집
+        try {
+          const viewport = page.getViewport({ scale: 1.5 });
+          const canvas = document.createElement("canvas");
+          canvas.width = viewport.width;
+          canvas.height = viewport.height;
+          const ctx = canvas.getContext("2d");
+          await page.render({ canvasContext: ctx, viewport }).promise;
+          const base64 = canvas.toDataURL("image/jpeg", 0.85).split(",")[1];
+          imagePages.push({ pageNum: i, base64 });
+          fullText += `[${i}페이지: 이미지 슬라이드]\n`;
+        } catch (err) {
+          console.warn(`[PDF] ${i}페이지 이미지 렌더링 실패:`, err);
+        }
       }
 
       setAnalysisProgress(Math.floor((i / totalPages) * 40) + 10);
     }
 
-    return fullText;
+    return { fullText, imagePages };
   };
 
-  const callAnalyzeAPI = async (textContent) => {
+  const callAnalyzeAPI = async (input) => {
+    // 텍스트만 들어오면 (refreshContextFromSpeech 대응) 객체로 변환
+    const { fullText, imagePages } = typeof input === 'string' 
+      ? { fullText: input, imagePages: [] } 
+      : input;
+
     const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
     if (!API_KEY) return null;
 
-    // 텍스트를 앞/중간/뒤 3등분해서 균형있게 샘플링 (총 12,000자)
-    const totalLen = textContent.length;
+    // 텍스트 균등 샘플링 (앞/중간/뒤 4000자씩)
+    const totalLen = fullText.length;
     const chunkSize = 4000;
-    const front = textContent.substring(0, chunkSize);
-    const middle = textContent.substring(
+    const front = fullText.substring(0, chunkSize);
+    const middle = fullText.substring(
       Math.floor(totalLen / 2) - chunkSize / 2,
       Math.floor(totalLen / 2) + chunkSize / 2
     );
-    const back = textContent.substring(totalLen - chunkSize);
+    const back = fullText.substring(totalLen - chunkSize);
     const sampledText = [front, middle, back]
       .filter(chunk => chunk.trim().length > 0)
       .join("\n\n[...중략...]\n\n");
 
-    const universalPrompt = `당신은 강의 자료를 분석하는 교육 AI입니다.
+    const systemPrompt = `당신은 강의 자료를 분석하는 교육 AI입니다.
 아래는 실제 강의 자료의 내용입니다. 반드시 아래 내용에만 근거하여 분석하고, 내용에 없는 것은 절대 추가하지 마세요.
-
-[강의 자료 내용]
-${sampledText}
-
-위 내용을 바탕으로 반드시 다음 JSON 형식으로만 응답하세요.
-인사말, 설명, 마크다운 코드블록 없이 오직 JSON { } 만 출력하세요:
+반드시 다음 JSON 형식으로만 응답하세요. 인사말, 설명, 마크다운 코드블록 없이 오직 JSON { } 만 출력하세요:
 {
   "topic": "강의 자료에서 파악한 핵심 주제 (1문장)",
   "keyPoints": ["핵심 개념 1", "핵심 개념 2", "핵심 개념 3", "핵심 개념 4"],
   "summary": "강의 자료 내용 기반 3줄 요약 (내용에 없는 것 추가 금지)"
 }`;
+
+    // Gemini API 멀티모달 content 구성
+    // 텍스트 파트
+    const parts = [
+      { text: `${systemPrompt}\n\n[강의 자료 텍스트]\n${sampledText}` }
+    ];
+
+    // 이미지 슬라이드가 있으면 최대 5장 추가 (API 토큰 절약)
+    const imagesToSend = imagePages.slice(0, 5);
+    for (const { pageNum, base64 } of imagesToSend) {
+      parts.push({
+        text: `\n[${pageNum}페이지 슬라이드 이미지]`
+      });
+      parts.push({
+        inline_data: {
+          mime_type: "image/jpeg",
+          data: base64
+        }
+      });
+    }
 
     // 최대 2회 재시도
     for (let attempt = 1; attempt <= 2; attempt++) {
@@ -278,7 +315,7 @@ ${sampledText}
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            contents: [{ parts: [{ text: universalPrompt }] }],
+            contents: [{ parts }],
             generationConfig: {
               maxOutputTokens: 500,
               temperature: 0.1  // 낮은 temperature → 창작 억제, 사실 기반 응답
@@ -334,22 +371,27 @@ ${sampledText}
     setAnalysisProgress(10);
 
     try {
-      let textContent = "";
+      let extractResult;
+
       if (file.type === "application/pdf") {
-        textContent = await extractTextFromPDF(await file.arrayBuffer());
+        extractResult = await extractTextFromPDF(await file.arrayBuffer());
       } else {
-        textContent = await file.text();
+        // TXT/MD는 텍스트만 있으므로 동일 구조로 래핑
+        const text = await file.text();
+        extractResult = { fullText: text, imagePages: [] };
       }
 
-      // 추출된 텍스트가 너무 짧으면 경고
-      if (textContent.trim().length < 100) {
-        alert("강의 자료에서 텍스트를 충분히 읽을 수 없습니다.\n이미지 기반 PDF이거나 보안 설정된 파일일 수 있습니다.\nTXT 파일로 변환 후 업로드해 주세요.");
+      const { fullText, imagePages } = extractResult;
+
+      // 텍스트 + 이미지 모두 없으면 경고
+      if (fullText.trim().length < 50 && imagePages.length === 0) {
+        alert("강의 자료에서 내용을 읽을 수 없습니다.\n보안 설정된 PDF이거나 완전한 이미지 파일일 수 있습니다.");
         setIsUploading(false);
         return;
       }
 
       setAnalysisProgress(60);
-      const summary = await callAnalyzeAPI(textContent);
+      const summary = await callAnalyzeAPI({ fullText, imagePages });
 
       if (summary) {
         setAnalyzedSummary(summary);
